@@ -172,6 +172,7 @@ $adminName = $admin['username'] ?? '';
         <a data-view="keys"><span>密钥</span></a>
         <a data-view="models"><span>模型管理</span></a>
         <a data-view="providers"><span>供应商</span></a>
+        <a data-view="logs"><span>日志</span></a>
         <a data-view="speedtest"><span>测速</span></a>
       </nav>
       <div class="foot">v1.0 · 内联 SPA</div>
@@ -191,7 +192,7 @@ $adminName = $admin['username'] ?? '';
 
   <script>
     const ACTIONS = (location.pathname.replace(/\/admin\/?.*$/, '/admin/') + 'actions.php').replace('//', '/');
-    const titles = { dashboard:'仪表盘', users:'用户', keys:'API 密钥', models:'模型管理', providers:'供应商', speedtest:'一键测速' };
+    const titles = { dashboard:'仪表盘', users:'用户', keys:'API 密钥', models:'模型管理', providers:'供应商', logs:'日志', speedtest:'一键测速' };
     let currentView = 'dashboard';
 
     function fd(obj) { const f = new FormData(); if (obj) { for (const k in obj) f.append(k, obj[k]); } return f; }

@@ -44,6 +44,9 @@ switch ($action) {
     case 'dashboard':
         echo (new AdminDashboard())->fragment();
         exit;
+    case 'logs':
+        echo (new AdminLogMgmt())->fragment();
+        exit;
 
     case 'users':
     case 'add_user':

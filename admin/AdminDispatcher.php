@@ -49,6 +49,9 @@ class AdminDispatcher implements HandlerInterface
             case 'providers':
                 (new AdminProviderMgmt())->handle($req);
                 break;
+            case 'logs':
+                (new AdminLogMgmt())->handle($req);
+                break;
             default:
                 AppResponse::status(404);
                 admin_layout('Not Found', '<p>Unknown admin page: ' . htmlspecialchars($seg) . '</p>');
@@ -149,8 +152,9 @@ function admin_layout(string $title, string $body, string $active = ''): void
         ''          => '仪表盘',
         'users'     => '用户',
         'keys'      => '密钥',
-        'models'    => '模型映射',
+        'models'    => '模型管理',
         'providers' => '供应商',
+        'logs'      => '日志',
     ];
     $links = '';
     foreach ($nav as $seg => $label) {
