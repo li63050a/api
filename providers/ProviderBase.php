@@ -86,11 +86,11 @@ abstract class ProviderBase
             [$httpCode, $result, $errno, $error] = $this->curlExec($url, 'POST', $headers, $postBody, (int) config('upstream_timeout', 120), $onChunk);
             $ok = ($errno === 0 && $httpCode >= 200 && $httpCode < 300);
 
-            if ($ok) {
-                $this->recordBilling($userId, $keyId, $model, $usage, $httpCode, $start);
-            }
-            return $ok;
+        if ($ok) {
+            $this->recordBilling($userId, $keyId, $model, $usage, $httpCode, $start, $errno, $error);
         }
+        return $ok;
+    }
 
         [$httpCode, $result, $errno, $error] = $this->curlExec($url, 'POST', $headers, $postBody, (int) config('upstream_timeout', 120), null);
         if ($errno !== 0 || $httpCode < 200 || $httpCode >= 300) {
@@ -103,11 +103,11 @@ abstract class ProviderBase
         $openai = $this->mapResponse($decoded);
         $client = ProviderFormatter::openaiToClient($openai, $clientFormat);
         $usage = $this->extractUsage($openai, false);
-        $this->recordBilling($userId, $keyId, $model, $usage, $httpCode, $start);
+        $this->recordBilling($userId, $keyId, $model, $usage, $httpCode, $start, $errno, $error);
         AppResponse::json($client);
     }
 
-    protected function recordBilling(int $userId, int $keyId, array $model, array $usage, int $httpCode, float $start): void
+    protected function recordBilling(int $userId, int $keyId, array $model, array $usage, int $httpCode, float $start, int $errno = 0, string $error = ''): void
     {
         try {
             (new SvcBilling())->record($userId, $keyId, $model['alias'] ?? '', (int) $usage['input'], (int) $usage['output']);
@@ -115,15 +115,22 @@ abstract class ProviderBase
         }
         try {
             $latency = (int) ((\microtime(true) - $start) * 1000);
+            $errMsg = '';
+            if ($httpCode >= 400 || $errno !== 0) {
+                $errMsg = $error !== '' ? $error : ('http ' . $httpCode);
+            }
             (new SvcLogger())->log([
                 'user_id' => $userId,
                 'api_key_id' => $keyId,
                 'path' => $this->reqPath,
                 'model_alias' => $model['alias'] ?? '',
+                'upstream_provider' => $this->providerName,
+                'ip' => '',
                 'status_code' => $httpCode,
                 'input_tokens' => (int) $usage['input'],
                 'output_tokens' => (int) $usage['output'],
                 'latency_ms' => $latency,
+                'error' => $errMsg,
                 'created_at' => time(),
             ]);
         } catch (\Throwable $e) {

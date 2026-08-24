@@ -26,6 +26,29 @@ if (!in_array($action, ['login', 'logout'], true) && $auth->current() === null) 
     exit;
 }
 
+// 只读操作无需 CSRF 校验；其余变更操作要求同源 X-Requested-With 头
+$readActions = ['login', 'logout', 'dashboard', 'logs', 'billing', 'audit', 'users', 'keys', 'models', 'providers', 'speed_test'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !in_array($action, $readActions, true)) {
+    if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest') {
+        http_response_code(403);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'error' => 'invalid request']);
+        exit;
+    }
+    // 后台操作审计
+    try {
+        $detail = $_POST;
+        unset($detail['password']);
+        db_insert(db(), 'admin_audit', [
+            'admin_id'    => (int) ($_SESSION['admin_id'] ?? 0),
+            'action'      => $action,
+            'detail'      => json_encode($detail, JSON_UNESCAPED_UNICODE),
+            'created_at'  => time(),
+        ]);
+    } catch (\Throwable $e) {
+    }
+}
+
 switch ($action) {
     case 'login':
         $u = trim((string) ($_POST['username'] ?? ''));
@@ -45,7 +68,14 @@ switch ($action) {
         echo (new AdminDashboard())->fragment();
         exit;
     case 'logs':
+    case 'logs_cleanup':
         echo (new AdminLogMgmt())->fragment();
+        exit;
+    case 'billing':
+        echo (new AdminBillingMgmt())->fragment();
+        exit;
+    case 'audit':
+        echo (new AdminAuditMgmt())->fragment();
         exit;
 
     case 'users':

@@ -89,18 +89,27 @@ function install_schema(\PDO $db): void
         created_at INTEGER NOT NULL
     );
 
+    CREATE INDEX IF NOT EXISTS idx_billing_created ON billing(created_at);
+
     CREATE TABLE IF NOT EXISTS request_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         api_key_id INTEGER,
         path TEXT,
         model_alias TEXT,
+        upstream_provider TEXT DEFAULT '',
+        ip TEXT DEFAULT '',
         status_code INTEGER,
         input_tokens INTEGER DEFAULT 0,
         output_tokens INTEGER DEFAULT 0,
         latency_ms INTEGER DEFAULT 0,
+        error TEXT DEFAULT '',
         created_at INTEGER NOT NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_request_log_created ON request_log(created_at);
+    CREATE INDEX IF NOT EXISTS idx_request_log_user ON request_log(user_id);
+    CREATE INDEX IF NOT EXISTS idx_request_log_status ON request_log(status_code);
 
     CREATE TABLE IF NOT EXISTS speedtest_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,6 +118,14 @@ function install_schema(\PDO $db): void
         ok INTEGER DEFAULT 0,
         latency_ms INTEGER DEFAULT 0,
         detail TEXT,
+        created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_id INTEGER,
+        action TEXT,
+        detail TEXT DEFAULT '',
         created_at INTEGER NOT NULL
     );
     ");

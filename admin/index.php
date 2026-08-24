@@ -156,7 +156,7 @@ $adminName = $admin['username'] ?? '';
       e.preventDefault();
       const fd = new FormData(this);
       fd.append('action', 'login');
-      fetch(ACTIONS, { method: 'POST', body: fd })
+      fetch(ACTIONS, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd })
         .then(r => r.json())
         .then(j => { if (j.ok) { location.reload(); } else { document.getElementById('loginErr').textContent = j.error || '登录失败'; } })
         .catch(() => { document.getElementById('loginErr').textContent = '网络错误'; });
@@ -173,6 +173,8 @@ $adminName = $admin['username'] ?? '';
         <a data-view="models"><span>模型管理</span></a>
         <a data-view="providers"><span>供应商</span></a>
         <a data-view="logs"><span>日志</span></a>
+        <a data-view="billing"><span>账单</span></a>
+        <a data-view="audit"><span>操作审计</span></a>
         <a data-view="speedtest"><span>测速</span></a>
       </nav>
       <div class="foot">v1.0 · 内联 SPA</div>
@@ -192,7 +194,9 @@ $adminName = $admin['username'] ?? '';
 
   <script>
     const ACTIONS = (location.pathname.replace(/\/admin\/?.*$/, '/admin/') + 'actions.php').replace('//', '/');
-    const titles = { dashboard:'仪表盘', users:'用户', keys:'API 密钥', models:'模型管理', providers:'供应商', logs:'日志', speedtest:'一键测速' };
+    const titles = { dashboard:'仪表盘', users:'用户', keys:'API 密钥', models:'模型管理', providers:'供应商', logs:'日志', billing:'账单统计', audit:'操作审计', speedtest:'一键测速' };
+    const REFRESH = <?php echo (int) config('dashboard_refresh_seconds', 0); ?>;
+    let dashTimer = null;
     let currentView = 'dashboard';
 
     function fd(obj) { const f = new FormData(); if (obj) { for (const k in obj) f.append(k, obj[k]); } return f; }
@@ -232,7 +236,7 @@ $adminName = $admin['username'] ?? '';
           e.preventDefault();
           const btn = form.querySelector('button[type=submit]');
           if (btn) { btn.disabled = true; }
-          fetch(ACTIONS, { method: 'POST', body: new FormData(form) })
+          fetch(ACTIONS, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: new FormData(form) })
             .then(r => {
               const ct = r.headers.get('content-type') || '';
               if (ct.indexOf('json') !== -1) { return r.json().then(j => ({ j, status: r.status })); }
@@ -259,11 +263,15 @@ $adminName = $admin['username'] ?? '';
     function loadView(v) {
       currentView = v;
       setActive(v);
+      if (dashTimer) { clearInterval(dashTimer); dashTimer = null; }
       const c = document.getElementById('content');
       if (v === 'speedtest') { c.innerHTML = speedPanel(); bindSpeed(); return; }
-      fetch(ACTIONS, { method: 'POST', body: fd({ action: v }) })
+      fetch(ACTIONS, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd({ action: v }) })
         .then(r => r.text())
         .then(html => { c.innerHTML = html; bindForms(c); bindProvType(); });
+      if (v === 'dashboard' && REFRESH > 0) {
+        dashTimer = setInterval(() => loadView('dashboard'), REFRESH * 1000);
+      }
     }
 
     /* ---------- 测速 ---------- */
@@ -278,7 +286,7 @@ $adminName = $admin['username'] ?? '';
         const st = document.getElementById('speedStatus');
         st.innerHTML = '<span class="spinner"></span> 探测中…';
         document.getElementById('speedResult').innerHTML = '';
-        fetch(ACTIONS, { method: 'POST', body: fd({ action: 'speed_test' }) })
+        fetch(ACTIONS, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd({ action: 'speed_test' }) })
           .then(r => r.json())
           .then(data => {
             st.textContent = '完成';
@@ -302,7 +310,7 @@ $adminName = $admin['username'] ?? '';
       const orig = btn.textContent;
       btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 同步中';
       const f = fd({ action: 'sync_models' }); if (pid) f.append('provider_id', pid);
-      fetch(ACTIONS, { method: 'POST', body: f })
+      fetch(ACTIONS, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: f })
         .then(r => r.text())
         .then(html => {
           const box = document.getElementById('provResult'); if (box) box.innerHTML = html;
@@ -322,7 +330,7 @@ $adminName = $admin['username'] ?? '';
       a.addEventListener('click', () => loadView(a.dataset.view));
     });
     document.getElementById('logoutBtn').addEventListener('click', function () {
-      fetch(ACTIONS, { method: 'POST', body: fd({ action: 'logout' }) })
+      fetch(ACTIONS, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd({ action: 'logout' }) })
         .then(() => { location.reload(); });
     });
 

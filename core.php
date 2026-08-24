@@ -97,3 +97,46 @@ foreach (['type' => "TEXT DEFAULT 'openai'", 'api_path' => "TEXT DEFAULT ''"] as
     } catch (\Throwable $e) {
     }
 }
+
+// 兼容旧库：补齐 request_log 新增列 + 索引 + 审计表
+foreach ([
+    'ip'                => "TEXT DEFAULT ''",
+    'upstream_provider' => "TEXT DEFAULT ''",
+    'error'             => "TEXT DEFAULT ''",
+] as $col => $def) {
+    try {
+        $db->exec("ALTER TABLE request_log ADD COLUMN {$col} {$def}");
+    } catch (\Throwable $e) {
+    }
+}
+$db->exec("CREATE INDEX IF NOT EXISTS idx_request_log_created ON request_log(created_at)");
+$db->exec("CREATE INDEX IF NOT EXISTS idx_request_log_user ON request_log(user_id)");
+$db->exec("CREATE INDEX IF NOT EXISTS idx_request_log_status ON request_log(status_code)");
+$db->exec("CREATE INDEX IF NOT EXISTS idx_billing_created ON billing(created_at)");
+$db->exec("CREATE TABLE IF NOT EXISTS admin_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id INTEGER,
+    action TEXT,
+    detail TEXT DEFAULT '',
+    created_at INTEGER NOT NULL
+)");
+
+// 低概率自动清理过期请求日志（避免表无限膨胀；保留天数见 config）
+if (mt_rand(1, 100) <= 2) {
+    try {
+        prune_request_logs($db, (int) config('log_retention_days', 30));
+    } catch (\Throwable $e) {
+    }
+}
+
+/**
+ * 删除 created_at 早于 $days 天的请求日志。days<=0 不清理。
+ */
+function prune_request_logs(\PDO $db, int $days): int
+{
+    if ($days <= 0) {
+        return 0;
+    }
+    $cut = time() - $days * 86400;
+    return $db->exec("DELETE FROM request_log WHERE created_at < {$cut}");
+}

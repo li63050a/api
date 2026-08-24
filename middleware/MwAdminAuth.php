@@ -11,7 +11,10 @@ class MwAdminAuth
         }
 
         $path = $req->path;
-        if (($path === '/admin/login') || ($_SESSION['admin_id'] ?? null)) {
+        if ($path === '/admin/login') {
+            return null;
+        }
+        if ((new AdminAuth())->current() !== null) {
             return null;
         }
 
