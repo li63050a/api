@@ -36,7 +36,9 @@ function install_schema(\PDO $db): void
     CREATE TABLE IF NOT EXISTS providers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
+        type TEXT DEFAULT 'openai',
         base_url TEXT NOT NULL,
+        api_path TEXT DEFAULT '',
         auth_scheme TEXT DEFAULT 'bearer',
         auth_header TEXT DEFAULT 'Authorization',
         list_endpoint TEXT DEFAULT '',
@@ -122,17 +124,18 @@ function install_schema(\PDO $db): void
         ]);
     }
 
-    // 种子供应商（base_url / list_endpoint 可按实际修改）
+    // 种子供应商：base_url 为 host 根，api_path 为版本路径（可改）；type 决定适配器
     $seeds = [
-        ['openai', 'https://api.openai.com/v1', '/models'],
-        ['anthropic', 'https://api.anthropic.com/v1', ''],
-        ['gemini', 'https://generativelanguage.googleapis.com/v1beta', '/models?key='],
+        ['openai', 'openai', 'https://api.openai.com', '/v1', '/models'],
+        ['anthropic', 'anthropic', 'https://api.anthropic.com', '/v1', ''],
+        ['gemini', 'gemini', 'https://generativelanguage.googleapis.com', '/v1beta', '/models?key='],
     ];
-    foreach ($seeds as [$name, $url, $list]) {
+    foreach ($seeds as [$name, $type, $url, $apiPath, $list]) {
         if (!db_fetch($db, "SELECT id FROM providers WHERE name = ?", [$name])) {
             db_insert($db, 'providers', [
-                'name' => $name, 'base_url' => $url, 'auth_scheme' => 'bearer',
-                'auth_header' => 'Authorization', 'list_endpoint' => $list, 'status' => 1,
+                'name' => $name, 'type' => $type, 'base_url' => $url, 'api_path' => $apiPath,
+                'auth_scheme' => 'bearer', 'auth_header' => 'Authorization',
+                'list_endpoint' => $list, 'status' => 1,
             ]);
         }
     }

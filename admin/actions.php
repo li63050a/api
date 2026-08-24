@@ -60,6 +60,7 @@ switch ($action) {
     case 'models':
     case 'save_model':
     case 'delete_model':
+    case 'toggle_model':
         echo (new AdminModelMapMgmt())->dispatch(new AppRequest());
         exit;
 

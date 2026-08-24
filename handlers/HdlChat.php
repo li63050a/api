@@ -18,7 +18,7 @@ class HdlChat implements HandlerInterface
         if ($provider === null) {
             AppResponse::error('provider not found', 502);
         }
-        $providerName = $provider['name'];
+        $providerName = strtolower((string) ($provider['type'] ?? $provider['name'] ?? 'openai'));
 
         $upKey = (new ProviderKeyPool())->next($model['provider_id']);
         if ($upKey === null) {

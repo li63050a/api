@@ -17,8 +17,8 @@ class SvcModelSync
             return ['ok' => false, 'error' => 'provider not found', 'models' => []];
         }
 
-        $name = strtolower((string) $provider['name']);
-        $baseUrl = rtrim((string) $provider['base_url'], '/');
+        $type = strtolower((string) ($provider['type'] ?? $provider['name'] ?? 'openai'));
+        $baseUrl = $this->baseUrl($provider);
 
         $keyRow = db_fetch(
             $db,
@@ -30,16 +30,16 @@ class SvcModelSync
         }
         $rawKey = crypto_decrypt((string) $keyRow['key_value']);
 
-        if ($name === 'anthropic') {
+        if ($type === 'anthropic') {
             return [
                 'ok' => true,
-                'provider' => $name,
+                'provider' => $type,
                 'note' => 'Anthropic 无公开模型列表接口，跳过自动同步，请手动维护 model_map。',
                 'models' => [],
             ];
         }
 
-        if ($name === 'gemini') {
+        if ($type === 'gemini') {
             $resp = $this->httpGet($baseUrl . '/models?key=' . urlencode($rawKey), []);
             if (!$resp['ok']) {
                 return ['ok' => false, 'error' => $resp['detail'], 'models' => []];
@@ -94,10 +94,17 @@ class SvcModelSync
 
         return [
             'ok' => true,
-            'provider' => $name,
+            'provider' => $type,
             'count' => count($synced),
             'models' => $synced,
         ];
+    }
+
+    private function baseUrl(array $provider): string
+    {
+        $base = rtrim((string) ($provider['base_url'] ?? ''), '/');
+        $p = trim((string) ($provider['api_path'] ?? ''), '/');
+        return $p !== '' ? $base . '/' . $p : $base;
     }
 
     private function httpGet(string $url, array $headers): array

@@ -88,3 +88,12 @@ try {
     }
     install_schema(db());
 }
+
+// 兼容旧库：补齐 providers 新增列（列已存在时 ALTER 会报错，忽略即可）
+$db = db();
+foreach (['type' => "TEXT DEFAULT 'openai'", 'api_path' => "TEXT DEFAULT ''"] as $col => $def) {
+    try {
+        $db->exec("ALTER TABLE providers ADD COLUMN {$col} {$def}");
+    } catch (\Throwable $e) {
+    }
+}

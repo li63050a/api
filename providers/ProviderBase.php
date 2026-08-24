@@ -13,8 +13,8 @@ abstract class ProviderBase
     {
         $this->reqPath = $req->path;
 
-        $prov = db_fetch(db(), 'SELECT name, base_url FROM providers WHERE id = ?', [$model['provider_id']]);
-        $this->providerName = $prov['name'] ?? '';
+        $prov = db_fetch(db(), 'SELECT id, name, type, base_url, api_path FROM providers WHERE id = ?', [$model['provider_id']]);
+        $this->providerName = strtolower((string) ($prov['type'] ?? $prov['name'] ?? 'openai'));
 
         $clientFormat = $req->getAttribute('client_format') ?? config('default_client_format', 'openai');
         $openaiBody = ProviderFormatter::clientToOpenai($req->json ?? [], $clientFormat);
@@ -38,8 +38,10 @@ abstract class ProviderBase
 
     protected function baseUrl(array $model): string
     {
-        $prov = db_fetch(db(), 'SELECT base_url FROM providers WHERE id = ?', [$model['provider_id']]);
-        return rtrim($prov['base_url'] ?? '', '/');
+        $prov = db_fetch(db(), 'SELECT base_url, api_path FROM providers WHERE id = ?', [$model['provider_id']]);
+        $base = rtrim($prov['base_url'] ?? '', '/');
+        $p = trim((string) ($prov['api_path'] ?? ''), '/');
+        return $p !== '' ? $base . '/' . $p : $base;
     }
 
     protected function attempt(AppRequest $req, array $model, array $upstreamKey, string $clientFormat, array $openaiBody): bool

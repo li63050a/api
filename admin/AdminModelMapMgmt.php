@@ -8,7 +8,7 @@ class AdminModelMapMgmt
 {
     public function handle(AppRequest $req): void
     {
-        admin_layout('模型映射', $this->dispatch($req), 'models');
+        admin_layout('模型管理', $this->dispatch($req), 'models');
     }
 
     public function dispatch(AppRequest $req): string
@@ -37,6 +37,13 @@ class AdminModelMapMgmt
             } elseif ($action === 'delete_model') {
                 $id = (int) ($_POST['id'] ?? 0);
                 db()->prepare("DELETE FROM model_map WHERE id = ?")->execute([$id]);
+            } elseif ($action === 'toggle_model') {
+                $id = (int) ($_POST['id'] ?? 0);
+                $row = db_fetch(db(), "SELECT status FROM model_map WHERE id = ?", [$id]);
+                if ($row !== null) {
+                    $new = $row['status'] == 1 ? 0 : 1;
+                    db_update(db(), 'model_map', ['status' => $new], ['id' => $id]);
+                }
             }
         }
         return $this->body();
@@ -53,7 +60,7 @@ class AdminModelMapMgmt
             $popts .= '<option value="' . (int) $p['id'] . '">' . htmlspecialchars($p['name']) . '</option>';
         }
 
-        $body = '<h1>模型映射</h1>';
+        $body = '<h1>模型管理</h1>';
         $body .= '<div class="card"><form id="modelForm" method="post" action="">
             <input type="hidden" name="action" value="save_model">
             <input type="hidden" name="id" value="0">
