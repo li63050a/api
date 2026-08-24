@@ -74,7 +74,7 @@ class AdminLogMgmt
             . '</select>'
             . '<select name="days">' . $this->opt('1', (string) $days, '近1天') . $this->opt('7', (string) $days, '近7天') . $this->opt('14', (string) $days, '近14天') . $this->opt('30', (string) $days, '近30天') . $this->opt('90', (string) $days, '近90天') . '</select>'
             . '<button type="submit">筛选</button>'
-            . '<a class="btn ghost" href="#" onclick="return resetLog()">重置</a>'
+            . '<a class="btn ghost" href="#" onclick="loadView(\'logs\');return false;">重置</a>'
             . '</form>';
 
         $summary = '<div class="stats" style="margin-bottom:16px">'
@@ -120,9 +120,7 @@ class AdminLogMgmt
         }
         $pager .= '<span class="muted">共 ' . $total . ' 条</span></div>';
 
-        $script = '<script>function resetLog(){const f=document.querySelector("form.toolbar");if(!f)return true;f.q.value="";f.user.value="";f.level.value="all";f.days.value="7";f.requestSubmit();return false;}</script>';
-
-        return '<h1>请求日志</h1>' . $filter . $summary . $body . $pager . $script;
+        return '<h1>请求日志</h1>' . $filter . $summary . $body . $pager;
     }
 
     private function param(string $k)
