@@ -116,7 +116,8 @@ class AdminLogMgmt
             . '<input type="number" name="days" value="' . $retention . '" min="0" style="width:70px">'
             . '<span class="muted">天前的日志（0=不清理）</span>'
             . '<button type="submit" class="danger">清理旧日志</button>'
-            . '</form>';
+            . '</form>'
+            . '<div class="toolbar" style="margin-top:-10px"><button type="button" class="btn" onclick="window.location=ACTIONS+\'?action=export_logs&days=' . $days . '\'">导出 CSV（近 ' . $days . ' 天）</button></div>';
 
         $summary = '<div class="stats" style="margin-bottom:16px">'
             . $this->stat($total, '命中记录')

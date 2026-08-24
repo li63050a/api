@@ -18,6 +18,11 @@ class AdminBillingMgmt
     {
         $db = db();
         $days = (int) ($this->param('days') ?: 30);
+        $cacheKey = 'billing_' . $days;
+        $cached = cache_get($cacheKey);
+        if ($cached !== null) {
+            return $cached;
+        }
         $cut = $days > 0 ? time() - $days * 86400 : 0;
         $w = $days > 0 ? 'WHERE b.created_at >= ?' : '';
         $wp = $days > 0 ? [$cut] : [];
@@ -52,6 +57,7 @@ class AdminBillingMgmt
             . '</div>';
 
         $body = $filter . $summary;
+        $body .= '<div class="toolbar" style="margin-top:-10px"><button type="button" class="btn" onclick="window.location=ACTIONS+\'?action=export_billing&days=' . $days . '\'">导出 CSV（近 ' . $days . ' 天）</button></div>';
         $body .= $this->table('按用户', ['用户', '请求', 'Token', '消费'], $topUsers, function ($r) {
             return '<td>' . htmlspecialchars($r['username']) . '</td><td>' . (int) $r['cnt'] . '</td><td>' . (int) $r['toks'] . '</td><td>¥' . sprintf('%.2f', (float) $r['amt']) . '</td>';
         });
@@ -62,7 +68,9 @@ class AdminBillingMgmt
             return '<td>' . htmlspecialchars($r['model_alias'] ?: '-') . '</td><td>' . (int) $r['cnt'] . '</td><td>¥' . sprintf('%.2f', (float) $r['amt']) . '</td>';
         });
 
-        return '<h1>账单统计</h1>' . $body;
+        $html = '<h1>账单统计</h1>' . $body;
+        cache_set($cacheKey, $html, (int) config('cache_ttl_seconds', 15));
+        return $html;
     }
 
     private function param(string $k)

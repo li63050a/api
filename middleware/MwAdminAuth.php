@@ -10,6 +10,17 @@ class MwAdminAuth
             session_start();
         }
 
+        // 后台 IP 白名单
+        $allow = config('admin_allowed_ips', '');
+        if ($allow !== '' && !$this->ipAllowed($allow)) {
+            if (!headers_sent()) {
+                http_response_code(403);
+                header('Content-Type: text/plain; charset=utf-8');
+            }
+            echo 'Forbidden';
+            exit;
+        }
+
         $path = $req->path;
         if ($path === '/admin/login') {
             return null;
@@ -20,6 +31,24 @@ class MwAdminAuth
 
         $this->renderLoginForm();
         exit;
+    }
+
+    private function ipAllowed(string $allow): bool
+    {
+        $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
+        if ($ip !== '') {
+            $ip = explode(',', $ip)[0];
+        } else {
+            $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+        }
+        $ip = trim((string) $ip);
+        foreach (explode(',', $allow) as $a) {
+            $a = trim($a);
+            if ($a === '' || $a === $ip) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function renderLoginForm(): void

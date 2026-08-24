@@ -27,7 +27,7 @@ if (!in_array($action, ['login', 'logout'], true) && $auth->current() === null) 
 }
 
 // 只读操作无需 CSRF 校验；其余变更操作要求同源 X-Requested-With 头
-$readActions = ['login', 'logout', 'dashboard', 'logs', 'billing', 'audit', 'users', 'keys', 'models', 'providers', 'speed_test'];
+$readActions = ['login', 'logout', 'dashboard', 'logs', 'billing', 'audit', 'profile', 'metrics', 'export_logs', 'export_billing', 'users', 'keys', 'models', 'providers', 'speed_test'];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !in_array($action, $readActions, true)) {
     if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest') {
         http_response_code(403);
@@ -76,6 +76,32 @@ switch ($action) {
         exit;
     case 'audit':
         echo (new AdminAuditMgmt())->fragment();
+        exit;
+    case 'profile':
+        echo (new AdminProfileMgmt())->fragment();
+        exit;
+    case 'change_password':
+        $old = (string) ($_POST['old_pwd'] ?? '');
+        $new = (string) ($_POST['new_pwd'] ?? '');
+        $adm = $auth->current();
+        if ($adm === null || $new === '' || !password_verify($old, (string) $adm['password_hash'])) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => '当前密码不正确']);
+            exit;
+        }
+        db_update(db(), 'admin_users', ['password_hash' => password_hash($new, PASSWORD_DEFAULT)], ['id' => $adm['id']]);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => true]);
+        exit;
+    case 'export_logs':
+        export_logs_csv((int) ($_GET['days'] ?? ($_POST['days'] ?? 7)));
+        exit;
+    case 'export_billing':
+        export_billing_csv((int) ($_GET['days'] ?? ($_POST['days'] ?? 30)));
+        exit;
+    case 'metrics':
+        header('Content-Type: text/plain; charset=utf-8');
+        echo build_metrics();
         exit;
 
     case 'users':
@@ -157,3 +183,117 @@ function render_sync(int $providerId): string
         . '<p class="hint">共处理 ' . count(array_filter($providers)) . ' 个供应商，新增/更新 ' . $total . ' 个模型。</p>'
         . '<table><tr><th>供应商</th><th>结果</th><th>说明</th></tr>' . $rows . '</table>';
 }
+
+/**
+ * 导出请求日志为 CSV。
+ */
+function export_logs_csv(int $days): void
+{
+    $cut = $days > 0 ? time() - $days * 86400 : 0;
+    $w = $days > 0 ? 'WHERE l.created_at >= ' . $cut : '';
+    $rows = db_fetchall(db(), "
+        SELECT l.*, u.username FROM request_log l
+        LEFT JOIN users u ON u.id = l.user_id
+        {$w} ORDER BY l.id DESC LIMIT 50000
+    ");
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="request_log_' . date('Ymd') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['时间', '用户', '模型', '上游', 'IP', '路径', '状态', '延迟(ms)', '输入', '输出', '错误', 'trace_id']);
+    foreach ($rows as $r) {
+        fputcsv($out, [
+            date('Y-m-d H:i:s', (int) $r['created_at']),
+            $r['username'] ?: '匿名',
+            $r['model_alias'] ?: '',
+            $r['upstream_provider'] ?: '',
+            $r['ip'] ?: '',
+            $r['path'] ?: '',
+            $r['status_code'],
+            $r['latency_ms'],
+            $r['input_tokens'],
+            $r['output_tokens'],
+            $r['error'] ?: '',
+            $r['trace_id'] ?: '',
+        ]);
+    }
+    fclose($out);
+    exit;
+}
+
+/**
+ * 导出账单为 CSV。
+ */
+function export_billing_csv(int $days): void
+{
+    $cut = $days > 0 ? time() - $days * 86400 : 0;
+    $w = $days > 0 ? 'WHERE b.created_at >= ' . $cut : '';
+    $rows = db_fetchall(db(), "
+        SELECT b.*, u.username, p.name AS prov FROM billing b
+        LEFT JOIN users u ON u.id = b.user_id
+        LEFT JOIN providers p ON p.id = b.provider_id
+        {$w} ORDER BY b.id DESC LIMIT 50000
+    ");
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="billing_' . date('Ymd') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['时间', '用户', '供应商', '模型', '请求数', '输入', '输出', '金额']);
+    foreach ($rows as $r) {
+        fputcsv($out, [
+            date('Y-m-d H:i:s', (int) $r['created_at']),
+            $r['username'] ?: '',
+            $r['prov'] ?: '',
+            $r['model_alias'] ?: '',
+            $r['request_count'],
+            $r['input_tokens'],
+            $r['output_tokens'],
+            $r['amount'],
+        ]);
+    }
+    fclose($out);
+    exit;
+}
+
+/**
+ * Prometheus 风格指标文本（后台聚合，按需计算）。
+ */
+function build_metrics(): string
+{
+    $db = db();
+    $day = time() - 86400;
+    $req = (int) (db_fetch($db, "SELECT COUNT(*) AS n FROM request_log WHERE created_at >= ?", [$day])['n'] ?? 0);
+    $err = (int) (db_fetch($db, "SELECT COUNT(*) AS n FROM request_log WHERE created_at >= ? AND status_code >= 400", [$day])['n'] ?? 0);
+    $lat = (float) (db_fetch($db, "SELECT COALESCE(AVG(latency_ms),0) AS v FROM request_log WHERE created_at >= ?", [$day])['v'] ?? 0);
+    $amt = (float) (db_fetch($db, "SELECT COALESCE(SUM(amount),0) AS v FROM billing WHERE created_at >= ?", [$day])['v'] ?? 0);
+    $cooled = (int) (db_fetch($db, "SELECT COUNT(*) AS n FROM upstream_keys WHERE cooldown_until > ?", [time()])['n'] ?? 0);
+
+    $lines = [];
+    $lines[] = '# HELP api_requests_24h 近24小时请求数';
+    $lines[] = '# TYPE api_requests_24h counter';
+    $lines[] = 'api_requests_24h ' . $req;
+    $lines[] = '# HELP api_errors_24h 近24小时错误数';
+    $lines[] = '# TYPE api_errors_24h counter';
+    $lines[] = 'api_errors_24h ' . $err;
+    $lines[] = '# HELP api_latency_avg_ms 近24小时平均延迟(ms)';
+    $lines[] = '# TYPE api_latency_avg_ms gauge';
+    $lines[] = 'api_latency_avg_ms ' . round($lat, 2);
+    $lines[] = '# HELP billing_amount_24h 近24小时消费总额';
+    $lines[] = '# TYPE billing_amount_24h counter';
+    $lines[] = 'billing_amount_24h ' . round($amt, 4);
+    $lines[] = '# HELP upstream_keys_cooled 当前处于冷却的 upstream key 数';
+    $lines[] = '# TYPE upstream_keys_cooled gauge';
+    $lines[] = 'upstream_keys_cooled ' . $cooled;
+
+    $byProv = db_fetchall($db, "
+        SELECT p.name AS prov, COUNT(*) AS n FROM request_log l
+        LEFT JOIN model_map m ON m.alias = l.model_alias
+        LEFT JOIN providers p ON p.id = m.provider_id
+        WHERE l.created_at >= ? GROUP BY p.name
+    ", [$day]);
+    $lines[] = '# HELP api_requests_by_provider 各供应商请求数';
+    $lines[] = '# TYPE api_requests_by_provider counter';
+    foreach ($byProv as $r) {
+        $lines[] = 'api_requests_by_provider{provider="' . ($r['prov'] ?: 'unknown') . '"} ' . $r['n'];
+    }
+    return implode("\n", $lines) . "\n";
+}
+

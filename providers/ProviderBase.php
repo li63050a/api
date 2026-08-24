@@ -88,6 +88,7 @@ abstract class ProviderBase
 
         if ($ok) {
             $this->recordBilling($userId, $keyId, $model, $usage, $httpCode, $start, $errno, $error);
+            (new ProviderKeyPool())->markSuccess($upstreamKey['id']);
         }
         return $ok;
     }
@@ -104,6 +105,7 @@ abstract class ProviderBase
         $client = ProviderFormatter::openaiToClient($openai, $clientFormat);
         $usage = $this->extractUsage($openai, false);
         $this->recordBilling($userId, $keyId, $model, $usage, $httpCode, $start, $errno, $error);
+        (new ProviderKeyPool())->markSuccess($upstreamKey['id']);
         AppResponse::json($client);
     }
 

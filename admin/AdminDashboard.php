@@ -12,6 +12,11 @@ class AdminDashboard
 
     public function fragment(): string
     {
+        $cacheKey = 'dashboard_v1';
+        $cached = cache_get($cacheKey);
+        if ($cached !== null) {
+            return $cached;
+        }
         $db = db();
         $today = strtotime('today');
         $month = strtotime('first day of this month');
@@ -131,7 +136,7 @@ class AdminDashboard
             $recentHtml = '<p class="muted">暂无请求日志</p>';
         }
 
-        return <<<HTML
+        $html = <<<HTML
 <style>
   .dash-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; align-items: start; }
   @media (max-width: 900px){ .dash-grid { grid-template-columns: 1fr; } }
@@ -181,7 +186,9 @@ class AdminDashboard
       {$userHtml}
     </div>
   </div>
-</div>
+ </div>
 HTML;
+        cache_set($cacheKey, $html, (int) config('cache_ttl_seconds', 15));
+        return $html;
     }
 }

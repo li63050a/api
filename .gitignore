@@ -4,3 +4,5 @@
 *.db-wal
 *.db-shm
  /.key
+/vendor/
+.phpunit.cache

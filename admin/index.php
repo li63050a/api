@@ -175,6 +175,8 @@ $adminName = $admin['username'] ?? '';
         <a data-view="logs"><span>日志</span></a>
         <a data-view="billing"><span>账单</span></a>
         <a data-view="audit"><span>操作审计</span></a>
+        <a data-view="metrics"><span>指标</span></a>
+        <a data-view="profile"><span>账号</span></a>
         <a data-view="speedtest"><span>测速</span></a>
       </nav>
       <div class="foot">v1.0 · 内联 SPA</div>
@@ -194,7 +196,7 @@ $adminName = $admin['username'] ?? '';
 
   <script>
     const ACTIONS = (location.pathname.replace(/\/admin\/?.*$/, '/admin/') + 'actions.php').replace('//', '/');
-    const titles = { dashboard:'仪表盘', users:'用户', keys:'API 密钥', models:'模型管理', providers:'供应商', logs:'日志', billing:'账单统计', audit:'操作审计', speedtest:'一键测速' };
+    const titles = { dashboard:'仪表盘', users:'用户', keys:'API 密钥', models:'模型管理', providers:'供应商', logs:'日志', billing:'账单统计', audit:'操作审计', metrics:'运行指标', profile:'账号', speedtest:'一键测速' };
     const REFRESH = <?php echo (int) config('dashboard_refresh_seconds', 0); ?>;
     let dashTimer = null;
     let currentView = 'dashboard';
@@ -266,6 +268,12 @@ $adminName = $admin['username'] ?? '';
       if (dashTimer) { clearInterval(dashTimer); dashTimer = null; }
       const c = document.getElementById('content');
       if (v === 'speedtest') { c.innerHTML = speedPanel(); bindSpeed(); return; }
+      if (v === 'metrics') {
+        fetch(ACTIONS, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd({ action: 'metrics' }) })
+          .then(r => r.text())
+          .then(t => { c.innerHTML = '<pre style="background:#0b1020;color:#d1fae5;padding:16px;border-radius:10px;overflow:auto;font-size:12px;line-height:1.5">' + esc(t) + '</pre>'; });
+        return;
+      }
       fetch(ACTIONS, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd({ action: v }) })
         .then(r => r.text())
         .then(html => { c.innerHTML = html; bindForms(c); bindProvType(); });

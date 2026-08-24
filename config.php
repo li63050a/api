@@ -26,4 +26,18 @@ return [
     'admin_login_lock_seconds' => 300,    // 触发上限后的锁定时长（秒）
     'dashboard_refresh_seconds' => 30,    // 仪表盘自动刷新间隔（0 = 关闭）
     'log_retention_days'       => 30,     // 请求日志保留天数（0 = 不自动清理）
+
+    // 性能与可观测性
+    'cache_dir'               => __DIR__ . '/data/cache',
+    'cache_ttl_seconds'       => 15,      // 聚合查询缓存时长
+    'request_log_sample_rate' => 1.0,     // 请求日志采样率 0~1（1=全量）
+    'request_log_errors_only' => false,   // true=仅记录错误(>=400)与异常请求
+    'metrics_enabled'         => true,
+
+    // 上游 Key 熔断
+    'key_cooldown_seconds'    => 300,     // 连续失败后冷却时长（自动恢复）
+
+    // 告警与访问控制
+    'alert_webhook'           => '',       // 失败告警 Webhook（留空关闭）
+    'admin_allowed_ips'       => '',       // 允许访问后台的 IP 白名单（逗号分隔，空=不限制）
 ];

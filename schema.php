@@ -65,7 +65,8 @@ function install_schema(\PDO $db): void
         key_value TEXT NOT NULL,
         status INTEGER DEFAULT 1,
         weight INTEGER DEFAULT 1,
-        last_error_at INTEGER DEFAULT 0
+        last_error_at INTEGER DEFAULT 0,
+        cooldown_until INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS quotas (
@@ -104,6 +105,7 @@ function install_schema(\PDO $db): void
         output_tokens INTEGER DEFAULT 0,
         latency_ms INTEGER DEFAULT 0,
         error TEXT DEFAULT '',
+        trace_id TEXT DEFAULT '',
         created_at INTEGER NOT NULL
     );
 
