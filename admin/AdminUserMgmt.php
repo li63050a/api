@@ -1,6 +1,7 @@
 <?php
 /**
  * 用户管理：列表 / 新增 / 启停。无 namespace；类名=文件名。
+ * 片段由 SPA 通过 fetch 加载；表单被 SPA 的 JS 拦截为 AJAX。
  */
 class AdminUserMgmt
 {
@@ -44,18 +45,17 @@ class AdminUserMgmt
         $users = db_fetchall($db, "SELECT * FROM users ORDER BY id DESC");
 
         $body = '<h1>用户</h1>';
-        $body .= '<div class="card"><form method="post" action="" style="display:flex;gap:8px;align-items:flex-end">
+        $body .= '<div class="card"><form method="post" action="">
             <input type="hidden" name="action" value="add_user">
-            <div><label style="font-size:12px;color:#334155">新用户名</label><br>
-            <input type="text" name="username" required></div>
-            <button type="submit">新增用户</button>
+            <div class="row">
+                <div><label>新用户名</label><input type="text" name="username" required></div>
+                <div><label>&nbsp;</label><button type="submit">新增用户</button></div>
+            </div>
         </form></div>';
 
         $body .= '<table><tr><th>ID</th><th>用户名</th><th>状态</th><th>余额</th><th>创建时间</th><th>操作</th></tr>';
         foreach ($users as $u) {
-            $status = $u['status'] == 1
-                ? '<span class="ok">启用</span>'
-                : '<span class="error">停用</span>';
+            $status = $u['status'] == 1 ? '<span class="pill on">启用</span>' : '<span class="pill off">停用</span>';
             $body .= '<tr>'
                 . '<td>' . (int) $u['id'] . '</td>'
                 . '<td>' . htmlspecialchars($u['username']) . '</td>'

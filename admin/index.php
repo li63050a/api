@@ -1,8 +1,9 @@
 <?php
 /**
- * 单页管理界面（HTML + CSS + 原生 JS）。
+ * 单页管理界面（HTML + 内联 CSS + 原生 JS）。
  * 独立可访问（admin/index.php）。未登录显示登录框；登录后左侧导航、主区通过
  * fetch('actions.php') 做 AJAX 加载与操作（统计、列表、表单、模型同步、一键测速）。
+ * 全部内联，不引用任何外部资源。
  */
 require_once __DIR__ . '/../core.php';
 
@@ -20,73 +21,103 @@ $adminName = $admin['username'] ?? '';
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>API 中转站 · 管理后台</title>
 <style>
+  :root {
+    --bg: #f1f5f9; --panel: #ffffff; --ink: #0f172a; --muted: #64748b;
+    --line: #e2e8f0; --brand: #2563eb; --brand-d: #1d4ed8;
+    --ok: #059669; --ok-bg: #dcfce7; --err: #dc2626; --err-bg: #fee2e2;
+    --warn: #d97706; --shadow: 0 1px 3px rgba(0,0,0,.08);
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f1f5f9; color: #0f172a; }
-  a { color: #2563eb; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); }
+  a { color: var(--brand); text-decoration: none; }
 
   /* 登录 */
-  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#0f172a,#1e293b); }
-  .login-card { background: #fff; padding: 36px 40px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.25); width: 340px; }
-  .login-card h1 { margin: 0 0 6px; font-size: 20px; }
-  .login-card .sub { color: #64748b; font-size: 13px; margin-bottom: 22px; }
+  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#0f172a,#1e293b); padding: 20px; }
+  .login-card { background: #fff; padding: 38px 42px; border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.3); width: 360px; }
+  .login-card h1 { margin: 0 0 4px; font-size: 21px; }
+  .login-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
   .login-card label { display: block; font-size: 13px; color: #334155; margin: 12px 0 5px; }
-  .login-card input { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
-  .login-card input:focus { border-color: #2563eb; outline: none; }
-  .login-card button { margin-top: 20px; width: 100%; padding: 11px; background: #2563eb; color: #fff; border: 0; border-radius: 8px; cursor: pointer; font-size: 14px; }
-  .login-card button:hover { background: #1d4ed8; }
-  .login-err { color: #dc2626; font-size: 13px; margin-top: 10px; }
+  .login-card input { width: 100%; padding: 11px 13px; border: 1px solid #cbd5e1; border-radius: 9px; font-size: 14px; transition: border-color .15s; }
+  .login-card input:focus { border-color: var(--brand); outline: none; }
+  .login-card button { margin-top: 22px; width: 100%; padding: 12px; background: var(--brand); color: #fff; border: 0; border-radius: 9px; cursor: pointer; font-size: 15px; transition: background .15s; }
+  .login-card button:hover { background: var(--brand-d); }
+  .login-err { color: var(--err); font-size: 13px; margin-top: 12px; min-height: 18px; }
 
   /* 布局 */
   .app { display: flex; min-height: 100vh; }
-  .sidebar { width: 210px; background: #0f172a; color: #cbd5e1; flex-shrink: 0; }
-  .sidebar .brand { padding: 18px 20px; font-weight: 700; color: #fff; border-bottom: 1px solid #1e293b; font-size: 15px; }
-  .sidebar nav { padding: 10px 0; }
-  .sidebar nav a { display: block; padding: 11px 20px; color: #cbd5e1; text-decoration: none; font-size: 14px; cursor: pointer; border-left: 3px solid transparent; }
+  .sidebar { width: 220px; background: #0f172a; color: #cbd5e1; flex-shrink: 0; display: flex; flex-direction: column; }
+  .sidebar .brand { padding: 20px; font-weight: 700; color: #fff; border-bottom: 1px solid #1e293b; font-size: 15px; letter-spacing: .3px; }
+  .sidebar nav { padding: 12px 0; flex: 1; }
+  .sidebar nav a { display: flex; align-items: center; gap: 10px; padding: 12px 22px; color: #cbd5e1; font-size: 14px; cursor: pointer; border-left: 3px solid transparent; transition: background .15s, color .15s; }
   .sidebar nav a:hover { background: #1e293b; color: #fff; }
-  .sidebar nav a.active { background: #1e293b; color: #fff; border-left-color: #3b82f6; }
+  .sidebar nav a.active { background: #1e293b; color: #fff; border-left-color: var(--brand); }
+  .sidebar .foot { padding: 14px 22px; font-size: 12px; color: #64748b; border-top: 1px solid #1e293b; }
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .topbar { height: 56px; background: #fff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; padding: 0 24px; }
-  .topbar .title { font-weight: 600; }
+  .topbar { height: 58px; background: #fff; border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 24px; }
+  .topbar .title { font-weight: 600; font-size: 15px; }
   .topbar .spacer { flex: 1; }
   .topbar .user { font-size: 13px; color: #475569; margin-right: 14px; }
-  .topbar button { padding: 7px 13px; background: #e2e8f0; color: #0f172a; border: 0; border-radius: 7px; cursor: pointer; font-size: 13px; }
+  .topbar button { padding: 7px 14px; background: #e2e8f0; color: #0f172a; border: 0; border-radius: 8px; cursor: pointer; font-size: 13px; transition: background .15s; }
   .topbar button:hover { background: #cbd5e1; }
   .content { padding: 24px; overflow: auto; }
 
   h1 { font-size: 22px; margin: 0 0 18px; }
   h3 { margin: 0 0 12px; font-size: 16px; }
-  .card { background: #fff; padding: 18px 20px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 20px; }
-  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eef2f7; font-size: 13px; vertical-align: middle; }
-  th { background: #f8fafc; color: #475569; font-weight: 600; }
+  .card { background: var(--panel); padding: 20px 22px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 20px; }
+  .card h3 { display: flex; align-items: center; gap: 8px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid #eef2f7; font-size: 13px; vertical-align: middle; }
+  th { background: #f8fafc; color: #475569; font-weight: 600; white-space: nowrap; }
   tr:last-child td { border-bottom: 0; }
+  tr:hover td { background: #fafcff; }
   form.inline { display: inline; }
-  input[type=text], input[type=number], input[type=password], select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 7px; font-size: 13px; }
-  input:focus, select:focus { border-color: #2563eb; outline: none; }
-  button, .btn { padding: 8px 13px; background: #2563eb; color: #fff; border: 0; border-radius: 7px; cursor: pointer; font-size: 13px; text-decoration: none; display: inline-block; }
-  button:hover, .btn:hover { background: #1d4ed8; }
-  button.danger { background: #dc2626; }
+  input[type=text], input[type=number], input[type=password], select { padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; background: #fff; color: var(--ink); }
+  input:focus, select:focus { border-color: var(--brand); outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+  label { font-size: 12px; color: #334155; }
+  button, .btn { padding: 9px 14px; background: var(--brand); color: #fff; border: 0; border-radius: 8px; cursor: pointer; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: background .15s; }
+  button:hover, .btn:hover { background: var(--brand-d); }
+  button.danger { background: var(--err); }
   button.danger:hover { background: #b91c1c; }
-  button.ghost { background: #e2e8f0; color: #0f172a; }
-  button.ghost:hover { background: #cbd5e1; }
-  .error { color: #dc2626; }
-  .ok { color: #059669; }
-  .muted { color: #64748b; }
+  button.ghost { background: #eef2f7; color: #0f172a; }
+  button.ghost:hover { background: #dbe4ee; }
+  button.success { background: var(--ok); }
+  button.success:hover { background: #047857; }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  .error { color: var(--err); }
+  .ok { color: var(--ok); }
+  .muted { color: var(--muted); }
   .stats { display: flex; gap: 16px; flex-wrap: wrap; }
-  .stat { flex: 1; min-width: 160px; background: #fff; padding: 18px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  .stat .v { font-size: 26px; font-weight: 700; }
-  .stat .l { color: #64748b; font-size: 13px; margin-top: 4px; }
-  .key-box { background: #f1f5f9; border: 1px dashed #94a3b8; padding: 12px; border-radius: 8px; font-family: monospace; word-break: break-all; }
-  code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
-  .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
-  .row > div { display: flex; flex-direction: column; gap: 4px; }
-  .row label { font-size: 12px; color: #334155; }
-  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; }
-  .pill.on { background: #dcfce7; color: #166534; }
-  .pill.off { background: #fee2e2; color: #991b1b; }
-  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
-  .spinner { width: 16px; height: 16px; border: 2px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; vertical-align: middle; }
+  .stat { flex: 1; min-width: 150px; background: var(--panel); padding: 18px 20px; border-radius: 12px; box-shadow: var(--shadow); }
+  .stat .v { font-size: 27px; font-weight: 700; }
+  .stat .l { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .key-box { background: #f8fafc; border: 1px dashed #94a3b8; padding: 13px; border-radius: 9px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+  code { background: #f1f5f9; padding: 1px 6px; border-radius: 5px; font-family: ui-monospace, monospace; }
+  .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .row > div { display: flex; flex-direction: column; gap: 5px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+  .pill.on { background: var(--ok-bg); color: #166534; }
+  .pill.off { background: var(--err-bg); color: #991b1b; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin: 4px 0 14px; flex-wrap: wrap; }
+  .prov-block { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+  .prov-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: #f8fafc; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .prov-head .pname { font-weight: 700; font-size: 15px; }
+  .prov-head .purl { color: var(--muted); font-size: 12px; word-break: break-all; flex: 1; min-width: 160px; }
+  .prov-body { padding: 16px 18px; }
+  .sub-t { font-size: 13px; font-weight: 600; color: #334155; margin: 0 0 10px; }
+  .spinner { width: 15px; height: 15px; border: 2px solid #cbd5e1; border-top-color: var(--brand); border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: #0f172a; color: #fff; padding: 12px 18px; border-radius: 10px; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.3); opacity: 0; transform: translateY(10px); transition: opacity .2s, transform .2s; z-index: 50; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.err { background: #7f1d1d; }
+
+  @media (max-width: 720px) {
+    .sidebar { width: 64px; }
+    .sidebar .brand, .sidebar .foot, .sidebar nav a span { display: none; }
+    .sidebar nav a { justify-content: center; padding: 14px 0; }
+    .content { padding: 16px; }
+  }
 </style>
 </head>
 <body>
@@ -113,10 +144,7 @@ $adminName = $admin['username'] ?? '';
       fd.append('action', 'login');
       fetch(ACTIONS, { method: 'POST', body: fd })
         .then(r => r.json())
-        .then(j => {
-          if (j.ok) { location.reload(); }
-          else { document.getElementById('loginErr').textContent = j.error || '登录失败'; }
-        })
+        .then(j => { if (j.ok) { location.reload(); } else { document.getElementById('loginErr').textContent = j.error || '登录失败'; } })
         .catch(() => { document.getElementById('loginErr').textContent = '网络错误'; });
     });
   </script>
@@ -125,14 +153,14 @@ $adminName = $admin['username'] ?? '';
     <aside class="sidebar">
       <div class="brand">API 中转站</div>
       <nav>
-        <a data-view="dashboard" class="active">仪表盘</a>
-        <a data-view="users">用户</a>
-        <a data-view="keys">密钥</a>
-        <a data-view="models">模型映射</a>
-        <a data-view="providers">供应商</a>
-        <a data-view="sync">模型同步</a>
-        <a data-view="speedtest">一键测速</a>
+        <a data-view="dashboard" class="active"><span>仪表盘</span></a>
+        <a data-view="users"><span>用户</span></a>
+        <a data-view="keys"><span>密钥</span></a>
+        <a data-view="models"><span>模型映射</span></a>
+        <a data-view="providers"><span>供应商</span></a>
+        <a data-view="speedtest"><span>测速</span></a>
       </nav>
+      <div class="foot">v1.0 · 内联 SPA</div>
     </aside>
     <div class="main">
       <div class="topbar">
@@ -145,15 +173,19 @@ $adminName = $admin['username'] ?? '';
     </div>
   </div>
 
+  <div class="toast" id="toast"></div>
+
   <script>
     const ACTIONS = (location.pathname.replace(/\/admin\/?.*$/, '/admin/') + 'actions.php').replace('//', '/');
-    const titles = { dashboard:'仪表盘', users:'用户', keys:'API 密钥', models:'模型映射', providers:'供应商', sync:'模型同步', speedtest:'一键测速' };
+    const titles = { dashboard:'仪表盘', users:'用户', keys:'API 密钥', models:'模型映射', providers:'供应商', speedtest:'一键测速' };
     let currentView = 'dashboard';
 
-    function fd(obj) {
-      const f = new FormData();
-      if (obj) { for (const k in obj) f.append(k, obj[k]); }
-      return f;
+    function fd(obj) { const f = new FormData(); if (obj) { for (const k in obj) f.append(k, obj[k]); } return f; }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
+    function toast(msg, isErr) {
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.className = 'toast show' + (isErr ? ' err' : '');
+      clearTimeout(t._t); t._t = setTimeout(() => { t.className = 'toast'; }, 2600);
     }
 
     function setActive(v) {
@@ -161,13 +193,50 @@ $adminName = $admin['username'] ?? '';
       document.getElementById('viewTitle').textContent = titles[v] || '';
     }
 
+    // 通用：把对象数据回填到指定表单（用于列表中的「编辑」）
+    function fillForm(formId, data) {
+      const f = document.getElementById(formId);
+      if (!f) return;
+      for (const k in data) {
+        const el = f.elements[k];
+        if (!el) continue;
+        if (el.type === 'checkbox') { el.checked = !!Number(data[k]); }
+        else { el.value = data[k]; }
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    function editRow(btn, formId) {
+      try { fillForm(formId, JSON.parse(atob(btn.getAttribute('data-edit')))); }
+      catch (e) { toast('编辑数据解析失败', true); }
+    }
+
+    // 拦截所有表单提交 -> fetch 到 actions.php -> 用返回 HTML 替换整个内容区
     function bindForms(root) {
       root.querySelectorAll('form').forEach(form => {
         form.addEventListener('submit', function (e) {
           e.preventDefault();
+          const btn = form.querySelector('button[type=submit]');
+          if (btn) { btn.disabled = true; }
           fetch(ACTIONS, { method: 'POST', body: new FormData(form) })
-            .then(r => r.text())
-            .then(html => { document.getElementById('content').innerHTML = html; bindForms(document.getElementById('content')); });
+            .then(r => {
+              const ct = r.headers.get('content-type') || '';
+              if (ct.indexOf('json') !== -1) { return r.json().then(j => ({ j, status: r.status })); }
+              return r.text().then(t => ({ t, status: r.status }));
+            })
+            .then(res => {
+              if (res.j) {
+                if (res.j.error === 'unauthorized') { location.reload(); return; }
+                toast(res.j.error || '操作完成', !res.j.ok);
+                if (res.j.ok) { loadView(currentView); }
+                else if (btn) { btn.disabled = false; }
+              } else {
+                const c = document.getElementById('content');
+                c.innerHTML = res.t;
+                bindForms(c);
+                toast('操作成功');
+              }
+            })
+            .catch(() => { toast('网络错误', true); if (btn) { btn.disabled = false; } });
         });
       });
     }
@@ -176,34 +245,17 @@ $adminName = $admin['username'] ?? '';
       currentView = v;
       setActive(v);
       const c = document.getElementById('content');
-      if (v === 'sync') { c.innerHTML = syncPanel(); bindSync(); return; }
       if (v === 'speedtest') { c.innerHTML = speedPanel(); bindSpeed(); return; }
       fetch(ACTIONS, { method: 'POST', body: fd({ action: v }) })
         .then(r => r.text())
         .then(html => { c.innerHTML = html; bindForms(c); });
     }
 
-    function syncPanel() {
-      return '<h1>模型同步</h1>'
-        + '<div class="card"><p class="muted">从已配置供应商的「列出模型」接口拉取模型，写入 model_map（默认停用，source=auto）。已存在的别名仅更新 fetched_at。</p>'
-        + '<div class="toolbar"><button id="syncBtn">同步所有供应商模型</button><span id="syncStatus"></span></div>'
-        + '<div id="syncResult"></div></div>';
-    }
-    function bindSync() {
-      document.getElementById('syncBtn').addEventListener('click', function () {
-        const st = document.getElementById('syncStatus');
-        st.innerHTML = '<span class="spinner"></span> 同步中…';
-        document.getElementById('syncResult').innerHTML = '';
-        fetch(ACTIONS, { method: 'POST', body: fd({ action: 'sync_models' }) })
-          .then(r => r.text())
-          .then(html => { st.textContent = '完成'; document.getElementById('syncResult').innerHTML = html; });
-      });
-    }
-
+    /* ---------- 测速 ---------- */
     function speedPanel() {
       return '<h1>一键测速</h1>'
-        + '<div class="card"><p class="muted">对每个供应商的每个上游 Key 进行一次轻量探测，记录可用性与延迟。</p>'
-        + '<div class="toolbar"><button id="speedBtn">开始测速</button><span id="speedStatus"></span></div>'
+        + '<div class="card"><p class="hint">对每个供应商的每个上游 Key 进行一次轻量探测，记录可用性与延迟。</p>'
+        + '<div class="toolbar"><button id="speedBtn" class="success">开始测速</button><span id="speedStatus"></span></div>'
         + '<div id="speedResult"></div></div>';
     }
     function bindSpeed() {
@@ -215,8 +267,9 @@ $adminName = $admin['username'] ?? '';
           .then(r => r.json())
           .then(data => {
             st.textContent = '完成';
+            if (!Array.isArray(data)) { document.getElementById('speedResult').innerHTML = '<p class="error">无数据</p>'; return; }
             let rows = '';
-            (data || []).forEach(d => {
+            data.forEach(d => {
               const pill = d.ok ? '<span class="pill on">可用</span>' : '<span class="pill off">不可用</span>';
               rows += '<tr><td>' + esc(d.provider) + '</td><td>#' + d.upstream_key_id + '</td><td>' + pill
                 + '</td><td>' + (d.latency_ms != null ? d.latency_ms + ' ms' : '-') + '</td><td class="muted">' + esc(d.detail) + '</td></tr>';
@@ -228,9 +281,27 @@ $adminName = $admin['username'] ?? '';
       });
     }
 
-    function esc(s) {
-      return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+    /* ---------- 模型同步（供应商页内集成） ---------- */
+    function doSync(btn) {
+      const pid = btn.getAttribute('data-pid');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 同步中';
+      const f = fd({ action: 'sync_models' }); if (pid) f.append('provider_id', pid);
+      fetch(ACTIONS, { method: 'POST', body: f })
+        .then(r => r.text())
+        .then(html => {
+          const box = document.getElementById('provResult'); if (box) box.innerHTML = html;
+          btn.disabled = false; btn.textContent = orig;
+          toast(pid ? '该供应商同步完成' : '全部同步完成');
+        })
+        .catch(() => { btn.disabled = false; btn.textContent = orig; toast('同步失败', true); });
     }
+
+    // 事件委托：同步按钮（同页增删改提交由 bindForms 处理）
+    document.addEventListener('click', function (e) {
+      const sb = e.target.closest('.js-sync'); if (sb) { doSync(sb); return; }
+      const sa = e.target.closest('.js-sync-all'); if (sa) { doSync(sa); return; }
+    });
 
     document.querySelectorAll('.sidebar nav a').forEach(a => {
       a.addEventListener('click', () => loadView(a.dataset.view));

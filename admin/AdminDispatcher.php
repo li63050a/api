@@ -202,6 +202,24 @@ function admin_layout(string $title, string $body, string $active = ''): void
   .stat .l { color: #64748b; font-size: 13px; margin-top: 4px; }
   .key-box { background: #f1f5f9; border: 1px dashed #94a3b8; padding: 12px; border-radius: 8px; font-family: monospace; word-break: break-all; }
   code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
+  .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+  .row > div { display: flex; flex-direction: column; gap: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; align-items: end; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; }
+  .pill.on { background: #dcfce7; color: #166534; }
+  .pill.off { background: #fee2e2; color: #991b1b; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin: 4px 0 14px; flex-wrap: wrap; }
+  .hint { font-size: 12px; color: #64748b; margin: 0 0 12px; }
+  .prov-block { border: 1px solid #eef2f7; border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
+  .prov-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #eef2f7; flex-wrap: wrap; }
+  .prov-head .pname { font-weight: 700; font-size: 15px; }
+  .prov-head .purl { color: #64748b; font-size: 12px; word-break: break-all; flex: 1; min-width: 160px; }
+  .prov-body { padding: 14px 16px; }
+  .sub-t { font-size: 13px; font-weight: 600; color: #334155; margin: 0 0 10px; }
+  button.success { background: #059669; }
+  button.success:hover { background: #047857; }
+  .spinner { width: 15px; height: 15px; border: 2px solid #cbd5e1; border-top-color: #2563eb; border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>

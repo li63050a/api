@@ -2,7 +2,7 @@
 /**
  * API 密钥管理：列表 / 为用户生成 Key（明文仅展示一次）/ 启停。
  * 生成使用 SvcAuth::generateKey() / SvcAuth::hashKey()，key_prefix 存前 8 位。
- * 无 namespace；类名=文件名。
+ * 无 namespace；类名=文件名。片段由 SPA 通过 fetch 加载；表单被 SPA 的 JS 拦截为 AJAX。
  */
 class AdminKeyMgmt
 {
@@ -75,15 +75,17 @@ class AdminKeyMgmt
         foreach ($users as $u) {
             $opts .= '<option value="' . (int) $u['id'] . '">' . htmlspecialchars($u['username']) . '</option>';
         }
-        $body .= '<div class="card"><form method="post" action="" style="display:flex;gap:8px;align-items:flex-end">
+        $body .= '<div class="card"><form method="post" action="">
             <input type="hidden" name="action" value="add_key">
-            <div><label style="font-size:12px;color:#334155">用户</label><br><select name="user_id">' . $opts . '</select></div>
-            <button type="submit">生成密钥</button>
+            <div class="row">
+                <div><label>用户</label><select name="user_id">' . $opts . '</select></div>
+                <div><label>&nbsp;</label><button type="submit">生成密钥</button></div>
+            </div>
         </form></div>';
 
         $body .= '<table><tr><th>ID</th><th>前缀</th><th>用户</th><th>状态</th><th>创建时间</th><th>操作</th></tr>';
         foreach ($keys as $k) {
-            $status = $k['status'] == 1 ? '<span class="ok">启用</span>' : '<span class="error">停用</span>';
+            $status = $k['status'] == 1 ? '<span class="pill on">启用</span>' : '<span class="pill off">停用</span>';
             $body .= '<tr>'
                 . '<td>' . (int) $k['id'] . '</td>'
                 . '<td><code>' . htmlspecialchars($k['key_prefix'] ?? '') . '…</code></td>'

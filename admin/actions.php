@@ -8,6 +8,7 @@
  *  save_provider / delete_provider / save_upstream_key / toggle_upstream_key / delete_upstream_key
  *  sync_models / speed_test
  * 调用对应 Svc* / Admin* / db_* 逻辑，返回 JSON 或 HTML 片段。
+ * 所有 mutation 均返回更新后的 HTML 片段，供 SPA 整段替换。
  */
 require_once __DIR__ . '/../core.php';
 
@@ -87,6 +88,10 @@ switch ($action) {
         exit;
 }
 
+/**
+ * 模型同步结果 HTML 片段。provider_id>0 时只同步该供应商，否则同步全部。
+ * 复用 SvcModelSync::syncProvider()。
+ */
 function render_sync(int $providerId): string
 {
     $svc = new SvcModelSync();
@@ -115,6 +120,6 @@ function render_sync(int $providerId): string
     }
 
     return '<h3>模型同步结果</h3>'
-        . '<p class="muted">共处理 ' . count($providers) . ' 个供应商，新增/更新 ' . $total . ' 个模型。</p>'
+        . '<p class="hint">共处理 ' . count(array_filter($providers)) . ' 个供应商，新增/更新 ' . $total . ' 个模型。</p>'
         . '<table><tr><th>供应商</th><th>结果</th><th>说明</th></tr>' . $rows . '</table>';
 }
