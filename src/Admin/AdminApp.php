@@ -35,6 +35,12 @@ final class AdminApp
             $links .= '<a data-view="' . $view . '"' . $active . '><span>' . $label . '</span></a>';
         }
 
+        // heredoc 仅插值变量，不允许函数调用；先求值后经 {$var} 注入
+        $css = views_css();
+        $loginOverlay = views_login_overlay();
+        $mustChangeOverlay = views_must_change_overlay();
+        $appJs = views_app_js();
+
         return <<<HTML
 <!doctype html>
 <html lang="zh-CN">
@@ -42,11 +48,11 @@ final class AdminApp
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>API 中转站 · 管理后台</title>
-<style>{views_css()}</style>
+<style>{$css}</style>
 </head>
 <body>
-{views_login_overlay()}
-{views_must_change_overlay()}
+{$loginOverlay}
+{$mustChangeOverlay}
 
 <div class="app hidden" id="appShell">
   <aside class="sidebar">
@@ -67,7 +73,7 @@ final class AdminApp
 
 <div class="toast" id="toast"></div>
 
-<script>{views_app_js()}</script>
+<script>{$appJs}</script>
 </body>
 </html>
 HTML;
