@@ -55,7 +55,7 @@ final class AdminApp
 
 <div class="app hidden" id="appShell">
   <aside class="sidebar">
-    <div class="brand"><span class="dot"></span>API 中转站</div>
+    <div class="brand"><span class="dot"></span><span class="label">API 中转站</span></div>
     <nav>{$links}</nav>
     <div class="foot">v1.0 · 内联 SPA</div>
   </aside>

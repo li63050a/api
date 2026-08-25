@@ -46,7 +46,7 @@ h3 { margin: 0 0 12px; font-size: 15px; }
 .overlay { position: fixed; inset: 0; z-index: 40; display: none; align-items: center; justify-content: center;
   background: radial-gradient(1200px 700px at 30% 20%, #2A2B3E, var(--bg) 60%); padding: 20px; }
 .overlay.show { display: flex; }
-.ov-card { width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
+.ov-card { width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
   padding: 34px 36px; box-shadow: var(--shadow); }
 .ov-card h1 { font-size: 20px; }
 .ov-card .sub { color: var(--muted); font-size: 13px; margin: -6px 0 20px; }
@@ -176,11 +176,44 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 6px; font-fa
 select[multiple].mm { min-height: 120px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
 
-@media (max-width: 760px) {
-  .sidebar { width: 64px; }
-  .sidebar .brand, .sidebar .foot, .sidebar nav a span { display: none; }
-  .sidebar nav a { justify-content: center; padding: 14px 0; }
-  .content { padding: 16px; }
+/* ========== 响应式：电脑 >1024px / 平板 641-1024px / 手机 <=640px ========== */
+
+/* 平板：窄侧栏（仅 Logo 圆点）+ 表格横向滚动 */
+@media (max-width: 1024px) {
+  .sidebar { width: 84px; }
+  .sidebar .brand { justify-content: center; padding: 18px 8px; }
+  .sidebar .brand .label { display: none; }
+  .sidebar .foot { display: none; }
+  .sidebar nav a { flex-direction: column; justify-content: center; gap: 3px; padding: 14px 4px;
+    font-size: 11px; text-align: center; border-left: 0; border-bottom: 2px solid transparent; }
+  .sidebar nav a.active { border-left-color: transparent; border-bottom-color: var(--brand); }
+  .content { padding: 20px; }
+  .content table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .content table th, .content table td { white-space: nowrap; }
+}
+
+/* 手机：侧栏改为底部标签栏 + 弹窗单列 + 控件拉伸 */
+@media (max-width: 640px) {
+  .sidebar { position: fixed; top: auto; bottom: 0; left: 0; right: 0; width: 100%; height: 56px;
+    flex-direction: row; border-right: 0; border-top: 1px solid var(--line); z-index: 60; }
+  .sidebar .brand, .sidebar .foot { display: none; }
+  .sidebar nav { display: flex; flex-direction: row; width: 100%; padding: 0; overflow-x: auto; }
+  .sidebar nav a { flex: 1 0 0; min-width: 0; flex-direction: column; gap: 3px; padding: 8px 2px;
+    font-size: 10px; border-left: 0; border-top: 2px solid transparent; }
+  .sidebar nav a.active { border-left-color: transparent; border-top-color: var(--brand); }
+  .main { margin-bottom: 56px; }
+  .topbar { height: 52px; padding: 0 14px; }
+  .topbar .user { display: none; }
+  .content { padding: 14px 12px 24px; }
+  h1 { font-size: 18px; }
+  .modal { width: 100%; max-width: 100%; padding: 18px 16px; }
+  .modal .grid { grid-template-columns: 1fr; }
+  .toolbar button, .toolbar .btn { flex: 1 1 auto; justify-content: center; }
+  .stat { min-width: 44%; }
+  .prov-head { padding: 12px; }
+  .prov-head .purl { flex-basis: 100%; }
+  .toast { bottom: 70px; right: 16px; left: 16px; text-align: center; z-index: 90; }
+  .key-box { font-size: 12px; }
 }
 CSS;
 }
