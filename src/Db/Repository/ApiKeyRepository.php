@@ -70,16 +70,16 @@ final class ApiKeyRepository
     }
 
     /**
-     * 按前缀取候选 key；兼容旧库无 sha 的 key（回退比较 key_hash）。
+     * 按前缀取候选 key；兼容旧库无 sha 的 key（调用方用 bcrypt 逐个校验）。
      *
      * @return array<int, array<string, mixed>>
      */
-    public function findCandidatesByPrefix(string $prefix, string $hash): array
+    public function findCandidatesByPrefix(string $prefix): array
     {
         return $this->db->fetchAll(
             'SELECT * FROM api_keys
-             WHERE key_prefix = ? AND status = 1 AND (key_sha256 = ? OR key_hash = ?)',
-            [$prefix, $hash, $hash]
+             WHERE key_prefix = ? AND status = 1',
+            [$prefix]
         );
     }
 
