@@ -8,12 +8,13 @@
 
 ## 一、功能特性
 
-- **多供应商统一路由**：按请求里的 `model` 别名映射到对应供应商（OpenAI / Anthropic / Gemini），上游 Key 支持多 Key 池 + 故障熔断 + 自动重试。
-- **多格式对外接口**：调用方可直接以 OpenAI 兼容格式，或 Anthropic / Gemini 客户端格式请求（通过 `X-Client-Format` 头切换）；内部以 OpenAI 为规范格式，供应商差异在适配器内消化。
+- **多供应商统一路由**：按请求里的 `model` 别名映射到对应供应商（OpenAI / Anthropic / Gemini，或任意 **OpenAI 兼容三方**如 DeepSeek / GLM / Qwen），上游 Key 支持多 Key 池 + 故障熔断 + 自动重试。
+- **单管理员 / 无下游多用户**：后台仅一个管理员账号（默认 `admin666`），不再维护下游用户体系；API Key 独立存在，是唯一的调用与计费凭据。
+- **多格式对外接口**：调用方可直接以 OpenAI 兼容格式，或 Anthropic / Gemini 客户端格式请求（通过 `X-Client-Format` 头切换）；内部以 OpenAI 为规范格式，供应商差异在适配器内消化。每个模型/供应商可指定自身接口格式。
 - **流式 & 非流式**：聊天补全支持 SSE 流式透传；流式开始后不可重试，避免重复输出。
-- **鉴权 / 限流 / 配额**：API Key（sha256 索引 O(1) 定位 + bcrypt 校验）；文件锁 best-effort 限流；按用户日 / 月配额。
+- **鉴权 / 限流 / 配额 / 权限（按 Key）**：API Key（sha256 索引 O(1) 定位 + bcrypt 校验）；文件锁 best-effort 限流；**每个 Key 可单独设置日 / 月 token 配额、IP 白名单、可用模型白名单**。
 - **首登强制改密**：默认管理员 `admin666` / `admin666`，首次登录强制修改用户名与密码（`must_change=1`）。
-- **管理后台（纯 SPA）**：仪表盘、用户、密钥、模型映射、供应商、模型自动同步、一键测速、审计日志。
+- **管理后台（纯 SPA）**：仪表盘、密钥、模型映射、供应商、模型**一键同步**、**一键测速**、请求日志、账单、审计。
 - **请求日志与指标**：按次记录请求，支持保留天数清理；近 7 日请求 / token 指标。
 
 ---
@@ -56,7 +57,7 @@ php scripts/reset_admin.php
 | `crypto_key` | 32 字节固定串 | 上游 Key 加解密密钥（**生产环境请修改 并备份**） |
 | `admin_default_password` | `admin666` | 默认 / 重置用管理员密码 |
 | `provider_max_retries` | 1 | 单个上游失败后重试次数 |
-| `ratelimit_requests_per_minute` | 60 | 每用户每分钟请求上限（0 = 不限） |
+| `ratelimit_requests_per_minute` | 60 | 每个调用方密钥每分钟请求上限（0 = 不限） |
 | `keypool_max_consecutive_failures` | 5 | 连续失败熔断阈值 |
 | `keypool_disabled_seconds` | 300 | 密钥熔断时长（秒） |
 | `log_retention_days` | 30 | 请求日志保留天数（0 = 不清理） |
@@ -70,13 +71,13 @@ php scripts/reset_admin.php
 访问 `https://你的域名/路径/admin/index.php`：
 
 1. **登录**：输入 `admin666` / `admin666`，首次被强制修改用户名 + 密码。
-2. **供应商**：核对/编辑 `openai` / `anthropic` / `gemini` 的 `base_url`；为每个供应商添加上游 Key（自动加密存储，仅存密文）。
+2. **供应商**：核对/编辑 `openai` / `anthropic` / `gemini`，或新增任意 **OpenAI 兼容三方**（如 `deepseek`、`glm`）；每个供应商需选择**接口格式**（OpenAI 兼容 / Anthropic / Gemini，决定适配器与鉴权方式）与 `base_url`，并添加上游 Key（自动加密存储，仅存密文）。
 3. **模型映射 / 模型同步**：
-   - 一键同步：从上游拉取模型列表写入 `model_map`（默认未启用）。
-   - 手动添加：`alias`（对外名）+ `provider` + `upstream_model`（真实模型）。
+   - 一键同步：从上游拉取模型列表写入 `model_map`（默认未启用），并自动继承供应商的接口格式。
+   - 手动添加：`alias`（对外名）+ `provider`（需与供应商名称一致）+ `upstream_model`（真实模型）+ `client_format`。
    - 把需要开放的模型**启用**，调用方才能使用。
-4. **用户 / 密钥**：建用户；为每用户生成 API Key（明文仅显示一次，请保存）。
-5. **测速 / 审计**：逐上游 Key 探测延迟；查看管理员操作审计。
+4. **密钥（创建与权限）**：直接生成独立 API Key（明文仅显示一次）。可单独设置：**可用模型白名单**（逗号分隔，空 = 全部）、**IP 白名单**（逗号分隔 IP / CIDR，空 = 不限）、**日 / 月 token 配额**（0 = 不限）。调用时若命中白名单外模型 / 来源 IP，或超配额，会被拒绝。
+5. **测速 / 审计**：在供应商面板或测速页**一键测速**，逐上游 Key 探测延迟；查看管理员操作审计；模型面板或供应商面板可**一键同步**上游模型。
 
 ---
 

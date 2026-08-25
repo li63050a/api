@@ -393,9 +393,9 @@ function views_app_js(): string
       + '<label>范围（天，0=全部）</label><input type="number" name="days" value="' + (data.days || 30) + '" style="width:80px">'
       + '<button type="submit">查看</button></form></div>';
     h += '<div class="stats">' + stat(s.count || 0, '请求次数') + stat('$ ' + (s.cost || 0).toFixed(4), '消费') + stat(s.tokens || 0, 'Token') + '</div>';
-    h += '<div class="card"><h3>按用户</h3>' + (data.by_user || []).length
-      ? tableHtml(['用户', '请求', 'Token', '消费'], data.by_user, function (r) {
-          return '<td>' + esc(r.username) + '</td><td>' + r.count + '</td><td>' + r.tokens + '</td><td>$ ' + (+r.cost).toFixed(4) + '</td>';
+    h += '<div class="card"><h3>按密钥</h3>' + (data.by_key || []).length
+      ? tableHtml(['密钥前缀', '请求', 'Token', '消费'], data.by_key, function (r) {
+          return '<td><code>' + esc(r.key_prefix || '#key') + '</code></td><td>' + r.count + '</td><td>' + r.tokens + '</td><td>$ ' + (+r.cost).toFixed(4) + '</td>';
         })
       : '<p class="muted">暂无数据</p>';
     h += '</div><div class="card"><h3>按模型</h3>' + (data.by_model || []).length
