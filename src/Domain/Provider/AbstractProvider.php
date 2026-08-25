@@ -40,7 +40,14 @@ abstract class AbstractProvider implements ProviderInterface
         for ($i = 0; $i < $attempts; $i++) {
             $upstream = $this->pool->pick((int)$model['provider_id']);
             if ($upstream === null) {
-                throw new HttpException('暂无可用的上游密钥，请稍后再试', 503, 'no_available_upstream');
+                $ctx = 'provider=' . (string)($model['provider'] ?? '')
+                    . ', provider_id=' . (int)($model['provider_id'] ?? 0)
+                    . ', model=' . (string)($model['alias'] ?? '');
+                throw new HttpException(
+                    '暂无可用的上游密钥（' . $ctx . '），请确认该供应商已配置 API Key 且未被熔断',
+                    503,
+                    'no_available_upstream'
+                );
             }
             $keyValue = $this->decryptUpstreamKey((string)$upstream['key_value']);
             // $model 为完整 model_map 行（含 base_url/upstream_model/timeout），必须整体传入 buildUrl
