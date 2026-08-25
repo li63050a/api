@@ -20,7 +20,6 @@ final class AdminApp
         $nav = [
             'dashboard' => '仪表盘',
             'keys' => '密钥',
-            'models' => '模型管理',
             'providers' => '供应商',
             'logs' => '日志',
             'billing' => '账单',
@@ -72,6 +71,7 @@ final class AdminApp
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="modal-mask" id="modalMask"><div class="modal" id="modalBox"></div></div>
 
 <script>{$appJs}</script>
 </body>

@@ -153,6 +153,29 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 6px; font-fa
 .prov-head .purl { color: var(--muted); font-size: 12px; word-break: break-all; flex: 1; min-width: 160px; }
 .prov-body { padding: 18px; }
 .sub-t { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
+
+/* 模态弹窗 */
+.modal-mask { position: fixed; inset: 0; z-index: 80; display: none; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.55); padding: 20px; }
+.modal-mask.show { display: flex; }
+.modal { width: 480px; max-width: 100%; max-height: 86vh; overflow: auto; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 22px 24px; }
+.modal h3 { margin: 0 0 14px; font-size: 16px; }
+.modal .m-close { float: right; background: none; border: 0; color: var(--muted); font-size: 20px; cursor: pointer; line-height: 1; }
+.modal .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal .grid .full { grid-column: 1 / -1; }
+.modal label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 5px; }
+.modal input, .modal select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  font-size: 13px; background: var(--panel-2); color: var(--ink); }
+.modal .m-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+  background: var(--brand-bg); color: var(--ink); font-size: 12px; }
+.chip button { background: none; border: 0; color: var(--muted); cursor: pointer; line-height: 1; padding: 0; font-size: 13px; }
+.chip button:hover { color: var(--err); }
+select[multiple].mm { min-height: 120px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+
 @media (max-width: 760px) {
   .sidebar { width: 64px; }
   .sidebar .brand, .sidebar .foot, .sidebar nav a span { display: none; }
@@ -221,7 +244,6 @@ function views_app_js(): string
   var VIEWS = {
     dashboard: { title: '仪表盘', action: 'dashboard' },
     keys:      { title: 'API 密钥', action: 'keys.list' },
-    models:    { title: '模型管理', action: 'modelmap.list' },
     providers: { title: '供应商', action: 'providers.list' },
     logs:      { title: '日志', action: 'logs.list' },
     billing:   { title: '账单', action: 'billing.list' },
@@ -246,9 +268,80 @@ function views_app_js(): string
   function pillOn(cond) { return cond ? '<span class="pill on">启用</span>' : '<span class="pill off">停用</span>'; }
   function pillStatus(s) { return s == 1 ? '<span class="pill on">启用</span>' : '<span class="pill off">停用</span>'; }
   function stat(v, l) { return '<div class="stat"><div class="v">' + v + '</div><div class="l">' + esc(l) + '</div></div>'; }
-  function b64(obj) { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }
   function fmtTime(t) { return t ? new Date(t * 1000).toLocaleString('zh-CN', { hour12: false }) : '-'; }
   function trunc(s) { s = s == null ? '' : String(s); return s.length > 24 ? s.slice(0, 24) + '…' : s; }
+
+  /* ---------- 模态弹窗 ---------- */
+  var maskEl = null, boxEl = null, modalAction = null;
+  function getModal() {
+    if (!maskEl) { maskEl = document.getElementById('modalMask'); boxEl = document.getElementById('modalBox');
+      maskEl.addEventListener('click', function (e) { if (e.target === maskEl) closeModal(); }); }
+    return { mask: maskEl, box: boxEl };
+  }
+  function openModal(title, fieldsHtml, onSubmit) {
+    var m = getModal();
+    modalAction = onSubmit;
+    boxEl.innerHTML = '<button type="button" class="m-close" data-mclose>&times;</button><h3>' + esc(title) + '</h3>'
+      + '<form data-mform>' + fieldsHtml
+      + '<div class="m-actions"><button type="button" data-mcancel class="ghost">取消</button>'
+      + '<button type="submit">保存</button></div></form>';
+    boxEl.querySelector('[data-mclose]').addEventListener('click', closeModal);
+    boxEl.querySelector('[data-mcancel]').addEventListener('click', closeModal);
+    boxEl.querySelector('form[data-mform]').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var body = {};
+      /* 多选（<select multiple>）同 key 多次出现 → 聚合为数组 */
+      new FormData(this).forEach(function (v, k) {
+        if (k in body) {
+          if (!Array.isArray(body[k])) { body[k] = [body[k]]; }
+          body[k].push(v);
+        } else {
+          body[k] = v;
+        }
+      });
+      closeModal();
+      if (modalAction) { modalAction(body); }
+    });
+    m.mask.classList.add('show');
+    var first = boxEl.querySelector('[name]:not([type=hidden])');
+    if (first) first.focus();
+  }
+  function closeModal() {
+    var m = getModal();
+    m.mask.classList.remove('show');
+    boxEl.innerHTML = '';
+  }
+  function confirmModal(title, msg, onOk) {
+    var m = getModal();
+    modalAction = onOk;
+    boxEl.innerHTML = '<button type="button" class="m-close" data-mclose>&times;</button><h3>' + esc(title) + '</h3>'
+      + '<p style="margin:0 0 18px">' + esc(msg) + '</p>'
+      + '<div class="m-actions"><button type="button" data-mcancel class="ghost">取消</button>'
+      + '<button type="button" class="danger" data-mok>确认删除</button></div>';
+    boxEl.querySelector('[data-mclose]').addEventListener('click', closeModal);
+    boxEl.querySelector('[data-mcancel]').addEventListener('click', closeModal);
+    boxEl.querySelector('[data-mok]').addEventListener('click', function () {
+      closeModal(); if (modalAction) modalAction();
+    });
+    m.mask.classList.add('show');
+  }
+  function submitMutate(action, body) {
+    api(action, body).then(function (j) {
+      if (j.ok && action === 'keys.save' && j.data && j.data.raw_key) { lastRawKey = j.data.raw_key; }
+      afterMutate(j);
+    });
+  }
+  function modelOptions(selected, models) {
+    selected = (selected || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var opts = '';
+    (models || []).forEach(function (mm) {
+      var sel = selected.indexOf(mm.alias) >= 0 ? ' selected' : '';
+      var dis = mm.enabled ? '' : '';
+      opts += '<option value="' + esc(mm.alias) + '"' + sel + dis + '>' + esc(mm.alias) + (mm.enabled ? '' : '（停用）') + '</option>';
+    });
+    return opts;
+  }
+  function fieldsWrap(html) { return html; }
 
   /* ---------- 数据获取 ---------- */
   function api(action, body) {
@@ -274,16 +367,10 @@ function views_app_js(): string
   }
 
   function fKeys(data) {
-    var h = '<h1>API 密钥</h1><div class="card"><form data-api="keys.save" class="grid">'
-      + '<input type="hidden" name="id" value="0">'
-      + '<div><label>备注</label><input type="text" name="name" placeholder="密钥名称/备注"></div>'
-      + '<div><label>允许模型</label><input type="text" name="allowed_models" placeholder="留空=全部, 支持多个如 gpt-4o,claude"></div>'
-      + '<div><label>IP 白名单</label><input type="text" name="ip_whitelist" placeholder="留空=不限, 支持逗号分隔IP或CIDR如 1.2.3.4,192.168.1.0/24"></div>'
-      + '<div><label>日配额token</label><input type="number" name="quota_daily" min="0" value="0"></div>'
-      + '<div><label>月配额token</label><input type="number" name="quota_monthly" min="0" value="0"></div>'
-      + '<div><label>状态</label><select name="status"><option value="1">启用</option><option value="0">停用</option></select></div>'
-      + '<div><label>&nbsp;</label><button type="submit">生成密钥</button></div>'
-      + '</form></div>';
+    var models = data.models || [];
+    var h = '<h1>API 密钥</h1><div class="card"><div class="toolbar">'
+      + '<button type="button" class="success" id="keyNewBtn">生成密钥</button>'
+      + '<span class="muted">密钥明文仅生成时显示一次，之后不可见。</span></div></div>';
     if (lastRawKey) {
       h += '<div class="card"><p class="ok">API Key 已生成（仅显示一次）：</p><div class="key-box">' + esc(lastRawKey) + '</div>'
         + '<p class="muted" style="font-size:12px">请立即复制保存，之后无法再次查看。</p></div>';
@@ -292,79 +379,265 @@ function views_app_js(): string
     (data.items || []).forEach(function (k) {
       h += '<tr><td>' + k.id + '</td><td><code>' + esc(k.key_prefix || '') + '…</code></td>'
         + '<td>' + esc(k.name || '-') + '</td><td>' + pillStatus(k.status) + '</td>'
-        + '<td class="muted">' + esc(trunc(k.allowed_models)) + '</td><td class="muted">' + esc(trunc(k.ip_whitelist)) + '</td>'
+        + '<td class="muted">' + esc(trunc(k.allowed_models || '')) + '</td><td class="muted">' + esc(trunc(k.ip_whitelist || '')) + '</td>'
         + '<td class="muted">' + (k.quota_daily || 0) + '</td><td class="muted">' + (k.quota_monthly || 0) + '</td>'
         + '<td class="muted">' + fmtTime(k.created_at) + '</td><td>'
-        + '<button type="button" class="ghost" data-act="keys.save" data-edit="' + b64({ id: k.id, name: k.name, status: k.status, allowed_models: k.allowed_models, ip_whitelist: k.ip_whitelist, quota_daily: k.quota_daily, quota_monthly: k.quota_monthly }) + '">编辑</button> '
+        + '<button type="button" class="ghost" data-editkey="' + k.id + '">编辑</button> '
         + '<button type="button" class="ghost" data-api-js="keys.save" data-toggle="' + k.id + '">' + (k.status == 1 ? '停用' : '启用') + '</button> '
-        + '<button type="button" class="danger" data-api-js="keys.delete" data-id="' + k.id + '">删除</button>'
+        + '<button type="button" class="danger" data-delkey="' + k.id + '" data-name="' + esc(k.name || k.key_prefix || '') + '">删除</button>'
         + '</td></tr>';
     });
     h += '</table>';
+    /* 延迟绑定生成/编辑/删除，避免依赖页内表单 */
+    setTimeout(function () {
+      var nb = document.getElementById('keyNewBtn');
+      if (nb) { nb.addEventListener('click', function () { editKeyModal(null, models); }); }
+      var content = document.getElementById('content');
+      content.querySelectorAll('[data-editkey]').forEach(function (b) {
+        var k = findKey((data.items || []), b.getAttribute('data-editkey'));
+        b.addEventListener('click', function () { editKeyModal(k, models); });
+      });
+      content.querySelectorAll('[data-delkey]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          confirmModal('删除 API 密钥', '确定要删除该密钥吗？此操作不可恢复。', function () {
+            submitMutate('keys.delete', { id: b.getAttribute('data-delkey') });
+          });
+        });
+      });
+    }, 0);
     return h;
   }
 
-  function fModels(data) {
-    var h = '<h1>模型管理</h1><div class="card"><form data-api="modelmap.save" class="grid">'
-      + '<input type="hidden" name="id" value="0">'
-      + '<div><label>别名 (alias)</label><input type="text" name="alias" required></div>'
-      + '<div><label>供应商</label><input type="text" name="provider" required placeholder="openai"></div>'
-      + '<div><label>上游模型</label><input type="text" name="upstream_model"></div>'
-      + '<div><label>客户端格式</label><select name="client_format"><option value="openai">openai</option><option value="anthropic">anthropic</option><option value="gemini">gemini</option></select></div>'
-      + '<div><label>状态</label><select name="enabled"><option value="1">启用</option><option value="0">停用</option></select></div>'
-      + '<div><label>&nbsp;</label><button type="submit">新增 模型</button></div>'
-      + '</form></div>';
-    h += '<table><tr><th>ID</th><th>别名</th><th>供应商</th><th>上游</th><th>格式</th><th>状态</th><th>操作</th></tr>';
-    (data.items || []).forEach(function (m) {
+  function findKey(list, id) {
+    for (var i = 0; i < list.length; i++) { if (String(list[i].id) === String(id)) return list[i]; }
+    return null;
+  }
+
+  function editKeyModal(k, models) {
+    var isNew = !k;
+    var sel = modelOptions(k ? k.allowed_models : '', models);
+    openModal(isNew ? '生成 API 密钥' : '编辑 API 密钥',
+      '<input type="hidden" name="id" value="' + (k ? k.id : 0) + '">'
+      + '<div class="full"><label>备注</label><input type="text" name="name" value="' + esc(k ? k.name : '') + '" placeholder="密钥名称/备注"></div>'
+      + '<div class="full"><label>允许模型（可多选，Ctrl/Cmd+点击）</label>'
+      + '<select name="allowed_models" multiple class="mm">' + sel + '</select></div>'
+      + '<div class="full"><label>IP 白名单（逗号分隔，空=不限）</label><input type="text" name="ip_whitelist" value="' + esc(k ? k.ip_whitelist : '') + '" placeholder="如 1.2.3.4,192.168.1.0/24"></div>'
+      + '<div><label>日配额Token</label><input type="number" name="quota_daily" min="0" value="' + (k ? k.quota_daily : 0) + '"></div>'
+      + '<div><label>月配额Token</label><input type="number" name="quota_monthly" min="0" value="' + (k ? k.quota_monthly : 0) + '"></div>'
+      + '<div class="full"><label>状态</label><select name="status">'
+      + '<option value="1"' + (k && k.status == 0 ? '' : ' selected') + '>启用</option>'
+      + '<option value="0"' + (k && k.status == 0 ? ' selected' : '') + '>停用</option></select></div>'
+      + '<div class="full"><p class="hint" style="margin:0">' + (isNew ? '生成密钥明文仅显示一次，请立即复制保存。' : '编辑不会改变已有密钥明文。') + '</p></div>',
+      function (body) {
+        body.allowed_models = Array.isArray(body.allowed_models)
+          ? body.allowed_models.join(',')                     /* 多选序列化为逗号分隔 */
+          : String(body.allowed_models || '').trim();
+        submitMutate('keys.save', body);
+      });
+  }
+
+  function formatLabel(f, formats) {
+    f = f || 'openai';
+    return (formats && formats[f]) ? formats[f] : f;
+  }
+
+  /* 模型管理区（供应商页顶部统一表格） */
+  function modelManageCard(providers, models) {
+    var h = '<h1>供应商 / 模型管理</h1><div class="card"><div class="toolbar">'
+      + '<button type="button" class="success" id="modelNewBtn">新增模型</button>'
+      + '<button type="button" class="ghost" id="provSyncAllBtn">同步全部模型</button>'
+      + '<button type="button" class="ghost" id="provSpeedBtn2">一键测速</button>'
+      + '<span class="muted">模型中继映射：别名→供应商→上游模型。上游一键同步后可在此启用/禁用。</span></div>'
+      + '<div id="provResult"></div></div>';
+    h += '<table><tr><th>ID</th><th>别名</th><th>供应商</th><th>上游模型</th><th>格式</th><th>状态</th><th>操作</th></tr>';
+    (models || []).forEach(function (m) {
       h += '<tr><td>' + m.id + '</td><td>' + esc(m.alias) + '</td><td>' + esc(m.provider) + '</td>'
-        + '<td>' + esc(m.upstream_model) + '</td><td>' + esc(m.client_format) + '</td><td>' + pillStatus(m.enabled) + '</td><td>'
-        + '<button type="button" class="ghost" data-act="modelmap.save" data-edit="' + b64({ id: m.id, alias: m.alias, provider: m.provider, upstream_model: m.upstream_model, client_format: m.client_format, enabled: m.enabled }) + '">编辑</button> '
-        + '<button type="button" class="danger" data-api-js="modelmap.delete" data-id="' + m.id + '">删除</button>'
+        + '<td>' + esc(m.upstream_model || '-') + '</td><td>' + esc(m.client_format) + '</td><td>' + pillStatus(m.enabled) + '</td><td>'
+        + '<button type="button" class="ghost" data-editmodel="' + m.id + '">编辑</button> '
+        + '<button type="button" class="ghost" data-togglemodel="' + m.id + '">' + (m.enabled == 1 ? '禁用' : '启用') + '</button> '
+        + '<button type="button" class="danger" data-delmodel="' + m.id + '">删除</button>'
         + '</td></tr>';
     });
     h += '</table>';
+    setTimeout(function () {
+      var nb = document.getElementById('modelNewBtn');
+      if (nb) { nb.addEventListener('click', function () { editModelModal(null, providers); }); }
+      var sba = document.getElementById('provSyncAllBtn');
+      if (sba) { sba.addEventListener('click', function () { submitMutate('modelmap.sync', {}); }); }
+      var sp = document.getElementById('provSpeedBtn2');
+      if (sp) {
+        sp.addEventListener('click', function () {
+          document.getElementById('provResult').innerHTML = '<span class="spinner"></span> 测速中…';
+          api('speedtest.run', {}).then(function (j) {
+            document.getElementById('provResult').innerHTML = j.ok ? fSpeedResult(j.data.results)
+              : '<p class="error">' + esc((j.error && j.error.message) || '测速失败') + '</p>';
+          }).catch(function () { document.getElementById('provResult').innerHTML = '<p class="error">测速失败</p>'; });
+        });
+      }
+      var content = document.getElementById('content');
+      content.querySelectorAll('[data-editmodel]').forEach(function (b) {
+        var m = findModel(models, b.getAttribute('data-editmodel'));
+        b.addEventListener('click', function () { editModelModal(m, providers); });
+      });
+      content.querySelectorAll('[data-togglemodel]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var m = findModel(models, b.getAttribute('data-togglemodel'));
+          submitMutate('modelmap.save', { id: m.id, alias: m.alias, provider: m.provider, upstream_model: m.upstream_model, client_format: m.client_format, enabled: m.enabled == 1 ? 0 : 1 });
+        });
+      });
+      content.querySelectorAll('[data-delmodel]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          confirmModal('删除模型映射', '确定要删除该模型映射吗？此操作不可恢复。', function () {
+            submitMutate('modelmap.delete', { id: b.getAttribute('data-delmodel') });
+          });
+        });
+      });
+    }, 0);
     return h;
+  }
+
+  function findModel(list, id) {
+    for (var i = 0; i < list.length; i++) { if (String(list[i].id) === String(id)) return list[i]; }
+    return null;
+  }
+
+  function editModelModal(m, providers) {
+    var isNew = !m;
+    var pOpts = '';
+    (providers || []).forEach(function (p) {
+      var sel = m && m.provider === p.name ? ' selected' : '';
+      pOpts += '<option value="' + esc(p.name) + '"' + sel + '>' + esc(p.name) + '</option>';
+    });
+    openModal(isNew ? '新增模型' : '编辑模型',
+      '<input type="hidden" name="id" value="' + (m ? m.id : 0) + '">'
+      + '<div class="full"><label>别名 (alias，对外名)</label><input type="text" name="alias" value="' + esc(m ? m.alias : '') + '" required></div>'
+      + '<div class="full"><label>供应商</label><select name="provider">' + pOpts + '</select></div>'
+      + '<div class="full"><label>上游模型（真实模型名）</label><input type="text" name="upstream_model" value="' + esc(m ? m.upstream_model : '') + '"></div>'
+      + '<div class="full"><label>客户端格式</label><select name="client_format">'
+      + '<option value="openai"' + (m && m.client_format == 'anthropic' ? '' : (m && m.client_format == 'gemini' ? '' : ' selected')) + '>OpenAI 兼容</option>'
+      + '<option value="anthropic"' + (m && m.client_format == 'anthropic' ? ' selected' : '') + '>Anthropic</option>'
+      + '<option value="gemini"' + (m && m.client_format == 'gemini' ? ' selected' : '') + '>Gemini</option></select></div>'
+      + '<div class="full"><label>状态</label><select name="enabled">'
+      + '<option value="1"' + (m && m.enabled == 0 ? '' : ' selected') + '>启用</option>'
+      + '<option value="0"' + (m && m.enabled == 0 ? ' selected' : '') + '>停用</option></select></div>'
+      + '<div class="full"><p class="hint" style="margin:0">上游模型留空时默认等于别名。</p></div>',
+      function (body) { submitMutate('modelmap.save', body); });
+  }
+
+  /* 上游密钥（单条）弹窗 */
+  function editUpstreamKeyModal(k, provider) {
+    var isNew = !k;
+    openModal(isNew ? '添加上游密钥' : '上游密钥（可替换）',
+      '<input type="hidden" name="id" value="' + (k ? k.id : 0) + '">'
+      + '<input type="hidden" name="provider_id" value="' + provider.id + '">'
+      + '<div class="full"><label>API Key 明文</label>'
+      + '<input type="text" name="key_value" value="' + (!isNew && k.has_key ? esc(k.key_value) : '') + '" placeholder="' + (isNew ? '粘贴上游 API Key' : '留空则保持不变') + '"></div>'
+      + '<div class="full"><label>权重（越大越优先）</label><input type="number" name="weight" min="0" value="' + (k ? k.weight : 1) + '"></div>'
+      + '<div class="full"><label>状态</label><select name="status">'
+      + '<option value="1"' + (k && k.status == 0 ? '' : ' selected') + '>启用</option>'
+      + '<option value="0"' + (k && k.status == 0 ? ' selected' : '') + '>停用</option></select></div>',
+      function (body) { submitMutate('upstream.key.save', body); });
   }
 
   function fProviders(data) {
-    var h = '<h1>供应商</h1><div class="card">'
-      + '<div class="toolbar"><button type="button" class="success" data-api-js="modelmap.sync">同步全部模型</button>'
-      + '<button type="button" class="ghost" id="provSpeedBtn">一键测速</button>'
-      + '<span class="muted">从各供应商列表接口拉取模型，并对每个上游 Key 测速。</span></div>'
-      + '<div id="provResult"></div></div>';
-    h += '<div class="card"><form data-api="providers.save" class="grid">'
-      + '<input type="hidden" name="id" value="0">'
-      + '<div><label>名称/类型</label><input type="text" name="name" required placeholder="openai"></div>'
-      + '<div><label>接口格式</label><select name="client_format"><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></div>'
-      + '<div><label>API URL</label><input type="text" name="base_url" required placeholder="https://api.openai.com"></div>'
-      + '<div><label>API Key（明文仅本次可见）</label><input type="password" name="api_key" autocomplete="off"></div>'
-      + '<div><label>状态</label><select name="status"><option value="1">启用</option><option value="0">停用</option></select></div>'
-      + '<div><label>&nbsp;</label><button type="submit">新增 供应商</button></div>'
-      + '</form></div>';
+    var h = modelManageCard(data.items, data.models);
+    h += '<div class="card"><div class="toolbar">'
+      + '<button type="button" class="success" id="provNewBtn">新增供应商</button>'
+      + '<span class="muted">上游密钥加密存储，明文可回显（仅管理员可见）。</span></div></div>';
     (data.items || []).forEach(function (p) {
       h += '<div class="prov-block"><div class="prov-head">'
-        + '<span class="pill on">' + esc(p.client_format || 'openai') + '</span>'
+        + '<span class="pill on">' + esc(formatLabel(p.client_format, data.formats)) + '</span>'
         + '<span class="pname">' + esc(p.name) + '</span>'
         + '<span class="purl">' + esc(p.base_url) + '</span>' + pillStatus(p.status)
-        + '<button type="button" class="ghost" data-act="providers.save" data-edit="' + b64({ id: p.id, name: p.name, client_format: p.client_format, base_url: p.base_url, status: p.status }) + '">编辑</button> '
-        + '<button type="button" class="success" data-api-js="modelmap.sync" data-pid="' + p.id + '">同步模型</button> '
-        + '<button type="button" class="danger" data-api-js="providers.delete" data-id="' + p.id + '">删除</button>'
-        + '</div><div class="prov-body"><p class="sub-t">上游密钥（加密存储）</p>';
+        + '<button type="button" class="ghost" data-editprov="' + p.id + '">编辑</button> '
+        + '<button type="button" class="ghost" data-syncprov="' + p.id + '">同步模型</button> '
+        + '<button type="button" class="danger" data-delprov="' + p.id + '">删除</button>'
+        + '</div><div class="prov-body">'
+        + '<div class="toolbar" style="margin-bottom:8px"><p class="sub-t" style="margin:0;align-self:center">上游密钥（加密存储）</p>'
+        + '<button type="button" class="ghost" data-addkey="' + p.id + '">添加上游密钥</button></div>';
       var keys = p.upstream_keys || [];
       if (keys.length) {
-        h += '<table><tr><th>ID</th><th>状态</th><th>权重</th><th>连续失败</th></tr>';
+        h += '<table><tr><th>ID</th><th>状态</th><th>权重</th><th>连续失败</th><th>密钥明文</th><th>操作</th></tr>';
         keys.forEach(function (k) {
           h += '<tr><td>' + k.id + '</td><td>' + pillStatus(k.status) + '</td><td>' + k.weight + '</td>'
-            + '<td class="muted">' + k.consecutive_failures + '</td></tr>';
+            + '<td class="muted">' + k.consecutive_failures + '</td>'
+            + '<td class="mono muted">' + (k.has_key ? esc(trunc(k.key_value)) : '<span class="muted">无</span>') + '</td>'
+            + '<td>'
+            + '<button type="button" class="ghost" data-editkey2="' + k.id + '" data-prov="' + p.id + '">查看/替换</button> '
+            + '<button type="button" class="danger" data-delkey2="' + k.id + '">删除</button>'
+            + '</td></tr>';
         });
         h += '</table>';
       } else {
-        h += '<p class="muted" style="margin:0 0 12px">该供应商暂无上游密钥。</p>';
+        h += '<p class="muted" style="margin:0 0 12px">该供应商暂无上游密钥，请点击「添加上游密钥」。</p>';
       }
       h += '</div></div>';
     });
     if (!(data.items || []).length) { h += '<p class="muted">尚未配置供应商。</p>'; }
+    setTimeout(function () {
+      var nb = document.getElementById('provNewBtn');
+      if (nb) { nb.addEventListener('click', function () { editProviderModal(null, data.formats); }); }
+      var content = document.getElementById('content');
+      content.querySelectorAll('[data-editprov]').forEach(function (b) {
+        var p = findProvider(data.items, b.getAttribute('data-editprov'));
+        b.addEventListener('click', function () { editProviderModal(p, data.formats); });
+      });
+      content.querySelectorAll('[data-syncprov]').forEach(function (b) {
+        b.addEventListener('click', function () { submitMutate('modelmap.sync', { provider_id: b.getAttribute('data-syncprov') }); });
+      });
+      content.querySelectorAll('[data-delprov]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          confirmModal('删除供应商', '删除该供应商会同时删除其全部上游密钥与关联模型映射，确定继续？', function () {
+            submitMutate('providers.delete', { id: b.getAttribute('data-delprov') });
+          });
+        });
+      });
+      content.querySelectorAll('[data-addkey]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var p = findProvider(data.items, b.getAttribute('data-addkey'));
+          editUpstreamKeyModal(null, p);
+        });
+      });
+      content.querySelectorAll('[data-editkey2]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var p = findProvider(data.items, b.getAttribute('data-prov'));
+          var k = findKey((p.upstream_keys || []), b.getAttribute('data-editkey2'));
+          editUpstreamKeyModal(k, p);
+        });
+      });
+      content.querySelectorAll('[data-delkey2]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          confirmModal('删除上游密钥', '确定要删除该上游密钥吗？此操作不可恢复。', function () {
+            submitMutate('upstream.key.delete', { id: b.getAttribute('data-delkey2') });
+          });
+        });
+      });
+    }, 0);
     return h;
+  }
+
+  function findProvider(list, id) {
+    for (var i = 0; i < list.length; i++) { if (String(list[i].id) === String(id)) return list[i]; }
+    return null;
+  }
+
+  function editProviderModal(p, formats) {
+    var isNew = !p;
+    var fSel = '';
+    Object.keys(formats || {}).forEach(function (f) {
+      var sel = p && p.client_format === f ? ' selected' : (!p && f === 'openai' ? ' selected' : '');
+      fSel += '<option value="' + esc(f) + '"' + sel + '>' + esc(formats[f]) + '</option>';
+    });
+    openModal(isNew ? '新增供应商' : '编辑供应商',
+      '<input type="hidden" name="id" value="' + (p ? p.id : 0) + '">'
+      + '<div class="full"><label>名称/类型</label><input type="text" name="name" value="' + esc(p ? p.name : '') + '" required placeholder="openai"></div>'
+      + '<div class="full"><label>接口格式</label><select name="client_format">' + fSel + '</select></div>'
+      + '<div class="full"><label>API URL</label><input type="text" name="base_url" value="' + esc(p ? p.base_url : '') + '" required placeholder="https://api.openai.com"></div>'
+      + '<div class="full"><label>状态</label><select name="status">'
+      + '<option value="1"' + (p && p.status == 0 ? '' : ' selected') + '>启用</option>'
+      + '<option value="0"' + (p && p.status == 0 ? ' selected' : '') + '>停用</option></select></div>'
+      + '<div class="full"><p class="hint" style="margin:0">' + (isNew ? '保存后可在下方为该供应商添加上游密钥。' : '修改不影响已存的上游密钥。') + '</p></div>',
+      function (body) { submitMutate('providers.save', body); });
   }
 
   function fLogs(data) {
@@ -473,7 +746,7 @@ function views_app_js(): string
 
   function render(section, data) {
     var fns = {
-      dashboard: fDashboard, keys: fKeys, models: fModels,
+      dashboard: fDashboard, keys: fKeys,
       providers: fProviders, logs: fLogs, billing: fBilling, audit: fAudit,
       metrics: fMetrics, profile: fProfile
     };
@@ -487,25 +760,6 @@ function views_app_js(): string
       a.classList.toggle('active', a.getAttribute('data-view') === v);
     });
     document.getElementById('viewTitle').textContent = (VIEWS[v] || {}).title || '';
-  }
-
-  function fillForm(formEl, data) {
-    formEl.querySelectorAll('[name]').forEach(function (el) {
-      var n = el.getAttribute('name');
-      if (n in data) {
-        if (el.type === 'checkbox') { el.checked = !!Number(data[n]); }
-        else { el.value = data[n]; }
-      }
-    });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
-  function editRow(btn) {
-    var target = btn.getAttribute('data-act');
-    var form = document.querySelector('form[data-api="' + target + '"]');
-    if (!form) return;
-    try { fillForm(form, JSON.parse(decodeURIComponent(escape(atob(btn.getAttribute('data-edit')))))); }
-    catch (e) { toast('编辑数据解析失败', true); }
   }
 
   function loadView(v) {
@@ -553,32 +807,15 @@ function views_app_js(): string
   }
 
   function bindButtons(root) {
-    root.querySelectorAll('button[data-act]').forEach(function (btn) {
-      btn.addEventListener('click', function () { editRow(btn); });
-    });
     root.querySelectorAll('button[data-api-js]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var action = btn.getAttribute('data-api-js');
         var body = {};
         if (btn.hasAttribute('data-id')) { body.id = btn.getAttribute('data-id'); }
         if (btn.hasAttribute('data-toggle')) { body.id = btn.getAttribute('data-toggle'); }
-        if (btn.hasAttribute('data-pid')) { body.provider_id = btn.getAttribute('data-pid'); }
         api(action, body).then(afterMutate);
       });
     });
-    var sb = root.querySelector('#provSpeedBtn');
-    if (sb) {
-      sb.addEventListener('click', function () {
-        document.getElementById('provResult').innerHTML = '<span class="spinner"></span> 测速中…';
-        api('speedtest.run', {}).then(function (j) {
-          document.getElementById('provResult').innerHTML = j.ok
-            ? fSpeedResult(j.data.results)
-            : '<p class="error">' + esc((j.error && j.error.message) || '测速失败') + '</p>';
-        }).catch(function () {
-          document.getElementById('provResult').innerHTML = '<p class="error">测速失败</p>';
-        });
-      });
-    }
   }
 
   function afterMutate(j) {

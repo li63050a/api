@@ -195,7 +195,11 @@ final class AdminController
     private function actKeysList(Request $r, array $b): array
     {
         $rows = $this->db->fetchAll('SELECT * FROM api_keys ORDER BY id DESC');
-        return ['items' => $rows];
+        $models = [];
+        foreach ($this->modelMap->all() as $m) {
+            $models[] = ['alias' => (string)$m['alias'], 'provider' => (string)$m['provider'], 'enabled' => (int)$m['enabled']];
+        }
+        return ['items' => $rows, 'models' => $models];
     }
 
     private function actKeysSave(Request $r, array $b): array
@@ -258,8 +262,11 @@ final class AdminController
 
     private function actProvidersList(Request $r, array $b): array
     {
+        $crypto = $this->crypto();
         $keysByProvider = [];
         foreach ($this->db->fetchAll('SELECT * FROM upstream_keys ORDER BY id DESC') as $k) {
+            $k['key_value'] = $this->revealUpstreamKey($k, $crypto);
+            $k['has_key'] = $k['key_value'] !== '';
             $keysByProvider[(int)$k['provider_id']][] = $k;
         }
         $providers = $this->providers->all();
@@ -268,10 +275,39 @@ final class AdminController
             $p['key_count'] = count($p['upstream_keys']);
         }
         unset($p);
+        $models = [];
+        foreach ($this->modelMap->all() as $m) {
+            $models[] = [
+                'id' => (int)$m['id'],
+                'alias' => (string)$m['alias'],
+                'provider' => (string)$m['provider'],
+                'upstream_model' => (string)$m['upstream_model'],
+                'client_format' => (string)$m['client_format'],
+                'enabled' => (int)$m['enabled'],
+            ];
+        }
         return [
             'items' => $providers,
+            'models' => $models,
             'formats' => ['openai' => 'OpenAI 兼容', 'anthropic' => 'Anthropic', 'gemini' => 'Gemini'],
         ];
+    }
+
+    /** 解密上游密钥明文；无法解密或为空时返回空串。 */
+    private function revealUpstreamKey(array $row, CryptoService $crypto): string
+    {
+        $v = (string)($row['key_value'] ?? '');
+        if ($v === '') {
+            return '';
+        }
+        if (str_starts_with($v, 'enc:')) {
+            $v = substr($v, 4);
+        }
+        try {
+            return $crypto->decrypt($v);
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     private function actProvidersSave(Request $r, array $b): array
@@ -310,6 +346,59 @@ final class AdminController
         $this->upstreamKeys->deleteByProvider($id);
         $this->providers->delete($id);
         $this->auditLog($r, 'providers.delete', ['id' => $id]);
+        return ['id' => $id];
+    }
+
+    /* ---------- 上游密钥（单条） ---------- */
+
+    private function actUpstreamKeySave(Request $r, array $b): array
+    {
+        $id = (int)($b['id'] ?? 0);
+        $providerId = (int)($b['provider_id'] ?? 0);
+        $raw = trim((string)($b['key_value'] ?? ''));
+        if ($providerId <= 0) {
+            throw new HttpException('provider_id 必填', 422, 'invalid_request');
+        }
+        $provider = $this->providers->find($providerId);
+        if ($provider === null) {
+            throw new HttpException('供应商不存在', 404, 'not_found');
+        }
+        if ($id > 0) {
+            // 编辑单条：可改状态 / 权重；填了新密钥则替换
+            $data = [];
+            if (array_key_exists('status', $b)) {
+                $data['status'] = (int)$b['status'];
+            }
+            if (array_key_exists('weight', $b)) {
+                $data['weight'] = max(0, (int)$b['weight']);
+            }
+            if ($raw !== '') {
+                $data['key_value'] = 'enc:' . $this->crypto()->encrypt($raw);
+            }
+            $this->upstreamKeys->update($id, $data);
+        } else {
+            if ($raw === '') {
+                throw new HttpException('API Key 必填', 422, 'invalid_request');
+            }
+            $id = $this->upstreamKeys->insert([
+                'provider_id' => $providerId,
+                'key_value' => 'enc:' . $this->crypto()->encrypt($raw),
+                'status' => (int)($b['status'] ?? 1),
+                'weight' => max(0, (int)($b['weight'] ?? 1)),
+            ]);
+        }
+        $this->auditLog($r, 'upstream.key.save', ['id' => $id, 'provider_id' => $providerId]);
+        return ['id' => $id];
+    }
+
+    private function actUpstreamKeyDelete(Request $r, array $b): array
+    {
+        $id = (int)($b['id'] ?? 0);
+        if ($id <= 0) {
+            throw new HttpException('invalid id', 422, 'invalid_request');
+        }
+        $this->upstreamKeys->delete($id);
+        $this->auditLog($r, 'upstream.key.delete', ['id' => $id]);
         return ['id' => $id];
     }
 
