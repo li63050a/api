@@ -42,7 +42,22 @@ abstract class AbstractRelayHandler
         $this->quota->assertWithinQuota($key, 'daily');
         $this->quota->assertWithinQuota($key, 'monthly');
 
-        $provider = $this->factory->make((string)$map['provider']);
+        try {
+            $provider = $this->factory->make((string)$map['provider']);
+        } catch (\RuntimeException $e) {
+            throw new HttpException(
+                'Provider not available for model: ' . ($map['alias'] ?? 'unknown') . ' (' . $e->getMessage() . ')',
+                503,
+                'provider_unavailable'
+            );
+        }
+        if (!$provider) {
+            throw new HttpException(
+                'Provider not available for model: ' . ($map['alias'] ?? 'unknown'),
+                503,
+                'provider_unavailable'
+            );
+        }
         $start = microtime(true);
 
         try {

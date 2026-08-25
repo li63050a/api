@@ -7,7 +7,6 @@ use App\Db\Database;
 use App\Db\Repository\AdminAuditRepository;
 use App\Db\Repository\AdminUserRepository;
 use App\Db\Repository\ApiKeyRepository;
-use App\Db\Repository\BillingRepository;
 use App\Db\Repository\ModelMapRepository;
 use App\Db\Repository\ProviderRepository;
 use App\Db\Repository\RequestLogRepository;
@@ -39,7 +38,6 @@ final class AdminController
     private ProviderRepository $providers;
     private ModelMapRepository $modelMap;
     private UpstreamKeyRepository $upstreamKeys;
-    private BillingRepository $billing;
     private RequestLogRepository $logs;
     private SpeedTestRepository $speedTests;
 
@@ -55,7 +53,6 @@ final class AdminController
         $this->providers = new ProviderRepository($db);
         $this->modelMap = new ModelMapRepository($db);
         $this->upstreamKeys = new UpstreamKeyRepository($db);
-        $this->billing = new BillingRepository($db);
         $this->logs = new RequestLogRepository($db);
         $this->speedTests = new SpeedTestRepository($db);
     }
@@ -503,36 +500,39 @@ final class AdminController
         return ['items' => $rows, 'total' => $total, 'page' => $page, 'per_page' => $perPage];
     }
 
-    private function actBillingList(Request $r, array $b): array
+    /** 删除指定日志（按 id）。 */
+    private function actLogsDelete(Request $r, array $b): array
     {
-        $days = (int)($b['days'] ?? 30);
-        $cut = $days > 0 ? time() - $days * 86400 : 0;
-        $w = $days > 0 ? ' WHERE created_at >= ?' : '';
-        $wp = $days > 0 ? [$cut] : [];
-        $total = $this->db->fetchOne(
-            'SELECT COUNT(*) AS count, COALESCE(SUM(cost),0) AS cost, COALESCE(SUM(total_tokens),0) AS tokens FROM billing' . $w,
-            $wp
-        );
-        $byKey = $this->db->fetchAll(
-            'SELECT k.key_prefix, COUNT(*) AS count, COALESCE(SUM(b.cost),0) AS cost, COALESCE(SUM(b.total_tokens),0) AS tokens
-             FROM billing b LEFT JOIN api_keys k ON k.id = b.api_key_id' . $w . ' GROUP BY b.api_key_id ORDER BY cost DESC LIMIT 20',
-            $wp
-        );
-        $byModel = $this->db->fetchAll(
-            'SELECT model, COUNT(*) AS count, COALESCE(SUM(cost),0) AS cost
-             FROM billing' . $w . ' GROUP BY model ORDER BY cost DESC LIMIT 20',
-            $wp
-        );
-        return [
-            'days' => $days,
-            'summary' => [
-                'count' => (int)$total['count'],
-                'cost' => (float)$total['cost'],
-                'tokens' => (int)$total['tokens'],
-            ],
-            'by_key' => $byKey,
-            'by_model' => $byModel,
-        ];
+        $id = (int)($b['id'] ?? 0);
+        if ($id <= 0) {
+            throw new HttpException('invalid id', 422, 'invalid_request');
+        }
+        $n = $this->db->execute('DELETE FROM request_log WHERE id = ?', [$id]);
+        $this->auditLog($r, 'logs.delete', ['id' => $id]);
+        return ['deleted' => $n];
+    }
+
+    /** 清空/批量删除日志：按当前筛选条件（user_id/status/error）删除；无筛选则清空全部。 */
+    private function actLogsClear(Request $r, array $b): array
+    {
+        $where = [];
+        $params = [];
+        if (array_key_exists('user_id', $b) && $b['user_id'] !== '' && $b['user_id'] !== null) {
+            $where[] = 'user_id = ?';
+            $params[] = (int)$b['user_id'];
+        }
+        if (array_key_exists('status', $b) && $b['status'] !== '' && $b['status'] !== null) {
+            $where[] = 'status = ?';
+            $params[] = (int)$b['status'];
+        }
+        if (array_key_exists('error', $b) && $b['error'] !== '' && $b['error'] !== null) {
+            $where[] = 'error LIKE ?';
+            $params[] = '%' . (string)$b['error'] . '%';
+        }
+        $whereSql = $where !== [] ? ' WHERE ' . implode(' AND ', $where) : '';
+        $n = $this->db->execute('DELETE FROM request_log' . $whereSql, $params);
+        $this->auditLog($r, 'logs.clear', ['filters' => ['user_id' => $b['user_id'] ?? '', 'status' => $b['status'] ?? '', 'error' => $b['error'] ?? ''], 'deleted' => $n]);
+        return ['deleted' => $n];
     }
 
     private function actAuditList(Request $r, array $b): array
@@ -565,13 +565,29 @@ final class AdminController
         return ['daily' => $daily, 'totals' => $this->logs->metrics($since)];
     }
 
-    /* ---------- 测速 / 系统 ---------- */
+    /* ---------- 模型级测速 / 系统 ---------- */
 
-    private function actSpeedtestRun(Request $r, array $b): array
+    /** 一键测速：对 model_map 每个模型做一次真实转发探测；auto_disable=1 时失败自动禁用。 */
+    private function actSpeedtestAll(Request $r, array $b): array
     {
-        $results = $this->speedTest()->testAll();
-        $this->auditLog($r, 'speedtest.run', ['count' => count($results)]);
+        $autoDisable = (int)($b['auto_disable'] ?? 0) === 1;
+        $results = $this->speedTest()->testAllModels($autoDisable);
+        $this->auditLog($r, 'speedtest.all', ['count' => count($results), 'auto_disable' => $autoDisable]);
         return ['results' => $results];
+    }
+
+    /** 指定测速：对单个模型做真实转发探测；auto_disable=1 时失败自动禁用。 */
+    private function actSpeedtestModel(Request $r, array $b): array
+    {
+        $id = (int)($b['id'] ?? 0);
+        $model = $id > 0 ? $this->modelMap->find($id) : null;
+        if ($model === null) {
+            throw new HttpException('模型不存在', 404, 'not_found');
+        }
+        $autoDisable = (int)($b['auto_disable'] ?? 0) === 1;
+        $result = $this->speedTest()->testModel($model, $autoDisable);
+        $this->auditLog($r, 'speedtest.model', ['model_id' => $id, 'alias' => (string)$model['alias'], 'auto_disable' => $autoDisable]);
+        return ['result' => $result];
     }
 
     private function actSystemResetAdmin(Request $r, array $b): array

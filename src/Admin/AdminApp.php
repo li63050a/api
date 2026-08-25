@@ -22,11 +22,9 @@ final class AdminApp
             'keys' => '密钥',
             'providers' => '供应商',
             'logs' => '日志',
-            'billing' => '账单',
             'audit' => '操作审计',
             'metrics' => '指标',
             'profile' => '账号',
-            'speedtest' => '测速',
         ];
         $links = '';
         $icons = views_nav_icons();

@@ -44,6 +44,11 @@ final class ModelMapRepository
         return $this->db->fetchOne('SELECT * FROM model_map WHERE alias = ?', [$alias]);
     }
 
+    public function find(int $id): ?array
+    {
+        return $this->db->fetchOne('SELECT * FROM model_map WHERE id = ?', [$id]);
+    }
+
     public function update(int $id, array $data): int
     {
         $sets = [];
