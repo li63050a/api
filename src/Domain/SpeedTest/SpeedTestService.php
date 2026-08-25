@@ -32,87 +32,114 @@ final class SpeedTestService
         private Config $config,
     ) {}
 
-    /** @return array<int, array<string, mixed>> */
-    public function testAll(): array
+    /** 一键测速：遍历 model_map 每个模型做真实转发探测；autoDisable 时失败自动禁用。 */
+    public function testAllModels(bool $autoDisable = false): array
     {
         $results = [];
-        foreach ($this->providers->findEnabledSorted() as $provider) {
-            foreach ($this->upstreamKeys->byProvider((int)$provider['id']) as $key) {
-                $results[] = $this->probe($provider, $key);
-            }
+        foreach ($this->modelMap->all() as $model) {
+            $results[] = $this->testModel($model, $autoDisable);
         }
         return $results;
     }
 
-    /** @return array<string, mixed> */
-    private function probe(array $provider, array $keyRow): array
+    /**
+     * 指定模型测速：按 model_map 行解析供应商与上游 Key，发一次最小请求。
+     *
+     * @param array<string, mixed> $model model_map 行
+     * @return array<string, mixed>
+     */
+    public function testModel(array $model, bool $autoDisable = false): array
     {
-        $providerId = (int)$provider['id'];
-        $type = strtolower((string)($provider['name'] ?? ''));
+        $modelId = (int)($model['id'] ?? 0);
+        $alias = (string)($model['alias'] ?? '');
+        $providerName = (string)($model['provider'] ?? '');
+        $provider = $this->providers->findByName($providerName);
+        if ($provider === null) {
+            return $this->modelResult($modelId, $alias, $providerName, false, 0, 0, '供应商不存在: ' . $providerName, $model, $autoDisable);
+        }
+        $keys = $this->upstreamKeys->byProvider((int)$provider['id']);
+        if ($keys === []) {
+            return $this->modelResult($modelId, $alias, $providerName, false, 0, 0, '无可用上游密钥', $model, $autoDisable);
+        }
+
+        $rawKey = $this->decryptKey((string)$keys[0]['key_value']);
+        $fmt = strtolower((string)($provider['client_format'] ?? 'openai'));
         $baseUrl = rtrim((string)($provider['base_url'] ?? ''), '/');
-        $keyId = (int)$keyRow['id'];
-        $rawKey = $this->decryptKey((string)$keyRow['key_value']);
+        $upstreamModel = (string)($model['upstream_model'] ?? $alias);
+        if ($upstreamModel === '') {
+            $upstreamModel = $alias;
+        }
 
         $start = microtime(true);
-        if ($type === 'anthropic') {
-            $resp = $this->httpPostJson(
-                $baseUrl . '/messages',
-                [
-                    'x-api-key: ' . $rawKey,
-                    'anthropic-version: 2023-06-01',
-                    'content-type: application/json',
-                ],
-                [
-                    'model' => $this->defaultModel($providerId),
-                    'max_tokens' => 1,
-                    'messages' => [['role' => 'user', 'content' => 'hi']],
-                ]
-            );
-        } elseif ($type === 'gemini') {
-            $resp = $this->httpGet($baseUrl . '/models?key=' . urlencode($rawKey));
-        } else {
-            $resp = $this->httpGet($baseUrl . '/models', ['Authorization: Bearer ' . $rawKey]);
-        }
+        $resp = $this->probeModelHttp($baseUrl, $fmt, $rawKey, $upstreamModel);
         $latency = (int)round((microtime(true) - $start) * 1000);
-
-        if ($type === 'anthropic') {
-            // 401/403 视为 Key 被拒；其它 2xx/4xx（含 404 模型未知）视为端点可达、Key 有效
-            $ok = $resp['code'] >= 200 && $resp['code'] < 500 && $resp['code'] !== 401 && $resp['code'] !== 403;
-        } else {
-            $ok = $resp['code'] >= 200 && $resp['code'] < 300;
-        }
-
-        $detail = ($resp['ok'] === false && $resp['error'] !== '')
-            ? $resp['error']
-            : 'http ' . $resp['code'];
+        $ok = $resp['code'] >= 200 && $resp['code'] < 300;
+        $detail = ($resp['ok'] === false && $resp['error'] !== '') ? $resp['error'] : 'http ' . $resp['code'];
 
         $this->speedTests->insert([
-            'provider_id' => $providerId,
-            'model' => $type === 'anthropic' ? $this->defaultModel($providerId) : '',
-            'endpoint' => $type === 'anthropic' ? '/messages' : '/models',
+            'provider_id' => (int)$provider['id'],
+            'model' => $upstreamModel,
+            'endpoint' => $fmt === 'anthropic' ? '/v1/messages' : ($fmt === 'gemini' ? '/v1beta/models/{model}:generateContent' : '/v1/chat/completions'),
             'latency_ms' => $latency,
             'success' => $ok ? 1 : 0,
             'error' => mb_substr($detail, 0, 500),
         ]);
 
+        return $this->modelResult($modelId, $alias, $providerName, $ok, $latency, $resp['code'], $detail, $model, $autoDisable);
+    }
+
+    /** 汇总探测结果；autoDisable 且失败时把模型置为停用。 */
+    private function modelResult(
+        int $modelId,
+        string $alias,
+        string $providerName,
+        bool $ok,
+        int $latency,
+        int $httpCode,
+        string $detail,
+        array $model,
+        bool $autoDisable,
+    ): array {
+        $disabled = false;
+        if ($autoDisable && !$ok && $modelId > 0) {
+            $this->modelMap->update($modelId, ['enabled' => 0]);
+            $disabled = true;
+        }
         return [
-            'provider_id' => $providerId,
-            'provider' => $type,
-            'upstream_key_id' => $keyId,
+            'model_id' => $modelId,
+            'alias' => $alias,
+            'provider' => $providerName,
+            'upstream_model' => (string)($model['upstream_model'] ?? $alias),
             'ok' => $ok,
             'latency_ms' => $latency,
-            'http_code' => $resp['code'],
+            'http_code' => $httpCode,
             'detail' => $detail,
+            'auto_disabled' => $disabled,
         ];
     }
 
-    private function defaultModel(int $providerId): string
+    /** 按供应商格式发一次最小请求，返回 {ok, error, code, body}。 */
+    private function probeModelHttp(string $baseUrl, string $fmt, string $rawKey, string $upstreamModel): array
     {
-        $row = $this->db->fetchOne(
-            'SELECT upstream_model FROM model_map WHERE provider = (SELECT name FROM providers WHERE id = ?) LIMIT 1',
-            [$providerId]
+        if ($fmt === 'anthropic') {
+            return $this->httpPostJson(
+                $baseUrl . '/v1/messages',
+                ['x-api-key: ' . $rawKey, 'anthropic-version: 2023-06-01', 'content-type: application/json'],
+                ['model' => $upstreamModel, 'max_tokens' => 1, 'messages' => [['role' => 'user', 'content' => 'hi']]]
+            );
+        }
+        if ($fmt === 'gemini') {
+            return $this->httpPostJson(
+                $baseUrl . '/v1beta/models/' . urlencode($upstreamModel) . ':generateContent?key=' . urlencode($rawKey),
+                ['content-type: application/json'],
+                ['contents' => [['parts' => [['text' => 'hi']]]]]
+            );
+        }
+        return $this->httpPostJson(
+            $baseUrl . '/v1/chat/completions',
+            ['content-type: application/json', 'Authorization: Bearer ' . $rawKey],
+            ['model' => $upstreamModel, 'max_tokens' => 1, 'messages' => [['role' => 'user', 'content' => 'hi']]]
         );
-        return (string)($row['upstream_model'] ?? 'claude-3-5-sonnet-20240620');
     }
 
     private function decryptKey(string $stored): string
