@@ -176,34 +176,33 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 6px; font-fa
 select[multiple].mm { min-height: 120px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
 
-/* ========== 响应式：电脑 >1024px / 平板 641-1024px / 手机 <=640px ========== */
+/* ========== 响应式：电脑 >1024px / 平板 641-1024px / 手机 <=640px ==========
+   原则：任何元素不隐藏，仅通过收窄、换行、重排与横向滚动适配。 */
 
-/* 平板：窄侧栏（仅 Logo 圆点）+ 表格横向滚动 */
+/* 平板：侧边栏适度收窄（全部文字仍可见）+ 表格横向滚动 */
 @media (max-width: 1024px) {
-  .sidebar { width: 84px; }
-  .sidebar .brand { justify-content: center; padding: 18px 8px; }
-  .sidebar .brand .label { display: none; }
-  .sidebar .foot { display: none; }
-  .sidebar nav a { flex-direction: column; justify-content: center; gap: 3px; padding: 14px 4px;
-    font-size: 11px; text-align: center; border-left: 0; border-bottom: 2px solid transparent; }
-  .sidebar nav a.active { border-left-color: transparent; border-bottom-color: var(--brand); }
+  .sidebar { width: 180px; }
+  .sidebar .brand { padding: 18px 16px; }
+  .sidebar nav a { padding: 12px 16px; }
+  .sidebar .foot { padding: 12px 16px; }
   .content { padding: 20px; }
   .content table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .content table th, .content table td { white-space: nowrap; }
 }
 
-/* 手机：侧栏改为底部标签栏 + 弹窗单列 + 控件拉伸 */
+/* 手机：侧边栏整体转为顶部栏（品牌+导航+版本号全部保留），弹窗单列 */
 @media (max-width: 640px) {
-  .sidebar { position: fixed; top: auto; bottom: 0; left: 0; right: 0; width: 100%; height: 56px;
-    flex-direction: row; border-right: 0; border-top: 1px solid var(--line); z-index: 60; }
-  .sidebar .brand, .sidebar .foot { display: none; }
+  .app { flex-direction: column; }
+  .sidebar { width: 100%; flex-direction: column; border-right: 0; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .sidebar .brand { width: 100%; justify-content: flex-start; padding: 12px 14px; font-size: 14px;
+    border-bottom: 1px solid var(--line); }
   .sidebar nav { display: flex; flex-direction: row; width: 100%; padding: 0; overflow-x: auto; }
-  .sidebar nav a { flex: 1 0 0; min-width: 0; flex-direction: column; gap: 3px; padding: 8px 2px;
-    font-size: 10px; border-left: 0; border-top: 2px solid transparent; }
-  .sidebar nav a.active { border-left-color: transparent; border-top-color: var(--brand); }
-  .main { margin-bottom: 56px; }
-  .topbar { height: 52px; padding: 0 14px; }
-  .topbar .user { display: none; }
+  .sidebar nav a { flex: 0 0 auto; min-width: 58px; flex-direction: column; gap: 3px; padding: 10px 8px;
+    font-size: 11px; border-left: 0; border-bottom: 2px solid transparent; }
+  .sidebar nav a.active { border-left-color: transparent; border-bottom-color: var(--brand); }
+  .sidebar .foot { width: 100%; padding: 8px 14px; font-size: 11px; border-top: 1px solid var(--line); }
+  .topbar { height: auto; min-height: 52px; padding: 0 14px; flex-wrap: wrap; gap: 6px; }
+  .topbar .user { font-size: 12px; margin-right: 8px; }
   .content { padding: 14px 12px 24px; }
   h1 { font-size: 18px; }
   .modal { width: 100%; max-width: 100%; padding: 18px 16px; }
@@ -212,7 +211,7 @@ select[multiple].mm { min-height: 120px; }
   .stat { min-width: 44%; }
   .prov-head { padding: 12px; }
   .prov-head .purl { flex-basis: 100%; }
-  .toast { bottom: 70px; right: 16px; left: 16px; text-align: center; z-index: 90; }
+  .toast { bottom: 16px; right: 16px; left: 16px; text-align: center; z-index: 90; }
   .key-box { font-size: 12px; }
 }
 CSS;
