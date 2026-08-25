@@ -1,20 +1,20 @@
-# AI API 中转站（原生 PHP，扁平结构）
+# AI API 中转站（原生 PHP · 零依赖）
 
-一个运行在虚拟主机上的 AI API 中转/聚合网关：对外暴露统一接口（支持 OpenAI / Anthropic / Gemini 等多种客户端格式），对内按 `model` 把请求路由到不同供应商，并自带鉴权、限流、配额、计费、缓存、日志与可视化管理后台。
+一个运行在虚拟主机上的 AI API 中转 / 聚合网关：对外暴露统一接口（支持 OpenAI / Anthropic / Gemini 等多种客户端格式），对内按 `model` 把请求路由到不同供应商，并自带鉴权、限流、配额、计费、日志与可视化管理后台。
+
+全新重构版：**零第三方依赖**（无 Composer、无 Redis、无需后台进程），命名空间分层 + 依赖注入，后台为纯 SPA 单页。
 
 ---
 
 ## 一、功能特性
 
-- **多供应商统一路由**：按请求里的 `model` 别名映射到对应供应商（OpenAI / Anthropic / Gemini…），上游 Key 支持多 Key 池 + 故障转移 + 自动重试。
+- **多供应商统一路由**：按请求里的 `model` 别名映射到对应供应商（OpenAI / Anthropic / Gemini），上游 Key 支持多 Key 池 + 故障熔断 + 自动重试。
 - **多格式对外接口**：调用方可直接以 OpenAI 兼容格式，或 Anthropic / Gemini 客户端格式请求（通过 `X-Client-Format` 头切换）；内部以 OpenAI 为规范格式，供应商差异在适配器内消化。
-- **流式 & 非流式**：聊天补全支持 SSE 流式透传。
-- **鉴权 / 限流 / 配额**：基于 API Key；文件锁 best-effort 限流；按用户配额。
-- **计费**：按 token（输入/输出）+ 每请求多维计费，写入 `billing` 表（对接你的计费逻辑）。
-- **缓存**：可缓存端点（如 embeddings）按请求哈希缓存。
-- **管理后台（HTML/CSS/JS）**：仪表盘、用户、密钥、模型映射、供应商、模型自动同步、一键测速。
-- **模型自动同步**：从上游拉取模型列表写入 `model_map`，由管理员选择启用/停用。
-- **一键测速 / 可用性检查**：逐上游 Key 探测可用性与延迟。
+- **流式 & 非流式**：聊天补全支持 SSE 流式透传；流式开始后不可重试，避免重复输出。
+- **鉴权 / 限流 / 配额**：API Key（sha256 索引 O(1) 定位 + bcrypt 校验）；文件锁 best-effort 限流；按用户日 / 月配额。
+- **首登强制改密**：默认管理员 `admin666` / `admin666`，首次登录强制修改用户名与密码（`must_change=1`）。
+- **管理后台（纯 SPA）**：仪表盘、用户、密钥、模型映射、供应商、模型自动同步、一键测速、审计日志。
+- **请求日志与指标**：按次记录请求，支持保留天数清理；近 7 日请求 / token 指标。
 
 ---
 
@@ -22,7 +22,7 @@
 
 - PHP ≥ 8.1
 - 扩展：`curl`、`openssl`、`pdo_sqlite`、`json`、`mbstring`、`session`
-- 虚拟主机需支持 PHP，且 **`data/` 目录可写**（用于 SQLite 与加密密钥文件）
+- 虚拟主机需支持 PHP，且 **`data/` 目录可写**（存放 SQLite 与缓存 / 限流文件）
 - 无需 Composer、无需 Redis、无需后台进程
 
 ---
@@ -30,36 +30,59 @@
 ## 三、安装与部署
 
 1. 把整个项目上传到虚拟主机的 web 目录（如 `public_html/` 或子目录）。
-2. 确保 `data/` 目录存在且 PHP 有写权限（首次访问会自动建 `app.db` 与 `.key`）。
+2. 确保 `data/`、`logs/` 目录存在且 PHP 有写权限（首次访问会自动建表）。
 3. 客户端访问基址为：`https://你的域名/路径/index.php`
-   （本项目**不依赖 URL 重写**，虚拟主机无需配置 .htaccess / rewrite，调用时把 `index.php` 当作 base_url 即可。）
-4. 首次访问任意 `/index.php/v1/...` 接口会自动执行 `install_schema()` 建表，并写入种子管理员。
+   （本项目**不依赖 URL 重写**，调用时把 `index.php` 当作 base_url 即可。）
+4. 首次访问任意 `/index.php/v1/...` 接口会自动执行建表，并写入默认管理员。
 
-> 默认管理员账号：`admin` / `change_me_now`（**请登录后立即修改或删除**）。
+> **默认管理员账号：`admin666` / `admin666`。首次登录会被强制要求修改用户名与密码，否则无法进入后台。**
 
----
+**重置管理员**（忘记密码 / 被锁定时）：
 
-## 四、配置上游（管理后台）
+```bash
+php scripts/reset_admin.php
+```
 
-访问 `https://你的域名/路径/admin/index.php` 登录后：
-
-1. **供应商（Providers）**
-   - 默认已种子 `openai` / `anthropic` / `gemini`，请核对 `base_url` 是否正确（可在「供应商」页编辑）。
-2. **上游密钥（Upstream Keys）**
-   - 在「供应商」页为每个供应商添加上游 Key（存储时自动 `crypto_encrypt` 加密，库中仅存密文）。
-   - 支持多条 Key，系统按权重轮询 + 故障时剔除。
-3. **模型映射（Model Map）/ 模型同步**
-   - **方式 A（推荐）一键同步**：在「模型同步」页选择供应商点「同步」，会从上游拉取模型列表写入 `model_map`（默认 `status=0` 未启用）。
-   - **方式 B 手动**：在「模型映射」页手动添加 `alias`（对外显示名）、`provider`、`upstream_model`（真实模型名）、单价（每 1000 token）、是否可缓存。
-   - 把需要开放的模型 **启用（status=1）**，调用方才能用它。
-4. **用户 / 密钥**
-   - 在「用户」页建用户；在「密钥」页为用户生成 API Key（明文仅显示一次，请保存）。
+它会把所有管理员账号重置为 `admin666` / 默认密码（`config.php` 的 `admin_default_password`，默认 `admin666`）并置 `must_change=1`。
 
 ---
 
-## 五、调用示例
+## 四、配置（config.php）
 
-中转站对外 base_url = `https://你的域名/路径/index.php`
+| 键 | 默认值 | 说明 |
+| --- | --- | --- |
+| `db_path` | `data/app.db` | SQLite 数据库路径 |
+| `log_dir` | `logs` | 日志目录 |
+| `crypto_key` | 32 字节固定串 | 上游 Key 加解密密钥（**生产环境请修改 并备份**） |
+| `admin_default_password` | `admin666` | 默认 / 重置用管理员密码 |
+| `provider_max_retries` | 1 | 单个上游失败后重试次数 |
+| `ratelimit_requests_per_minute` | 60 | 每用户每分钟请求上限（0 = 不限） |
+| `keypool_max_consecutive_failures` | 5 | 连续失败熔断阈值 |
+| `keypool_disabled_seconds` | 300 | 密钥熔断时长（秒） |
+| `log_retention_days` | 30 | 请求日志保留天数（0 = 不清理） |
+
+完整键请直接查看 [config.php](config.php)。
+
+---
+
+## 五、后台使用
+
+访问 `https://你的域名/路径/admin/index.php`：
+
+1. **登录**：输入 `admin666` / `admin666`，首次被强制修改用户名 + 密码。
+2. **供应商**：核对/编辑 `openai` / `anthropic` / `gemini` 的 `base_url`；为每个供应商添加上游 Key（自动加密存储，仅存密文）。
+3. **模型映射 / 模型同步**：
+   - 一键同步：从上游拉取模型列表写入 `model_map`（默认未启用）。
+   - 手动添加：`alias`（对外名）+ `provider` + `upstream_model`（真实模型）。
+   - 把需要开放的模型**启用**，调用方才能使用。
+4. **用户 / 密钥**：建用户；为每用户生成 API Key（明文仅显示一次，请保存）。
+5. **测速 / 审计**：逐上游 Key 探测延迟；查看管理员操作审计。
+
+---
+
+## 六、调用示例
+
+对外 base_url = `https://你的域名/路径/index.php`
 
 ### 1. OpenAI 兼容格式（默认）
 
@@ -67,16 +90,12 @@
 curl https://你的域名/路径/index.php/v1/chat/completions \
   -H "Authorization: Bearer sk-你的调用方Key" \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "你启用的模型alias",
-    "messages": [{"role":"user","content":"你好"}],
-    "stream": false
-  }'
+  -d '{"model":"你启用的模型alias","messages":[{"role":"user","content":"你好"}],"stream":false}'
 ```
 
 ### 2. 指定其它客户端格式
 
-通过 `X-Client-Format` 头切换（支持 `openai` / `anthropic` / `gemini`）：
+通过 `X-Client-Format` 头切换（`openai` / `anthropic` / `gemini`）：
 
 ```bash
 curl https://你的域名/路径/index.php/v1/chat/completions \
@@ -86,9 +105,9 @@ curl https://你的域名/路径/index.php/v1/chat/completions \
   -d '{"model":"你的alias","messages":[{"role":"user","content":"hi"}],"max_tokens":256}'
 ```
 
-内部流程：`客户端格式 --(Formatter)--> OpenAI规范 --(适配器)--> 供应商API`，响应逆向转换。
+内部流程：`客户端格式 --(Formatter)--> OpenAI 规范 --(适配器)--> 供应商 API`，响应逆向转换。
 
-### 3. 向量化（可缓存）
+### 3. 向量化
 
 ```bash
 curl https://你的域名/路径/index.php/v1/embeddings \
@@ -106,56 +125,52 @@ curl https://你的域名/路径/index.php/v1/models \
 
 ---
 
-## 六、管理后台功能
-
-- **仪表盘**：用户数、今日请求数、今日收入、错误率。
-- **用户 / 密钥**：用户增删改与启停；为用户生成 API Key（明文仅显示一次）。
-- **模型映射**：alias / 供应商 / 真实模型 / 单价 / 可缓存 / 启停。
-- **供应商**：编辑 base_url；管理上游 Key（加密存储、脱敏展示）。
-- **模型同步**：一键从上游拉取模型写入 `model_map`，再逐个启用。
-- **一键测速**：逐上游 Key 探测可用性与延迟，结果写入 `speedtest_log` 并页面展示。
-
----
-
 ## 七、计费 / 限流 / 配额
 
-- **计费**：`SvcBilling::record()` 依据 `model_map` 的 `price_input`/`price_output`（每 1000 token）与 `price_per_request`，写入 `billing` 表并扣减用户余额。
-- **限流**：`SvcRateLimit` 基于文件锁，按 `api_keys` + 分钟窗口计数（阈值 `config('rate_limit_per_minute')`）。
-- **配额**：`SvcQuota` 按 `users.quota_daily/quota_monthly` 与 `billing` 累计判断。
+- **计费**：`BillingService::record()` 记录每次请求的 token 用量写入 `billing` 表（按原语义**不扣余额**，仅记账，供外部计费逻辑消费）。
+- **限流**：`FileRateLimiter` 基于文件锁，按用户 + 路径 + 分钟窗口计数（阈值 `ratelimit_requests_per_minute`）。
+- **配额**：`QuotaService` 按 `users.quota_daily / quota_monthly` 与当日 / 当月累计 token 判定，超限返回 429。
 
 ---
 
-## 八、目录结构（扁平、无命名空间）
+## 八、目录结构（命名空间分层，`App\` → `src/`）
 
 ```
-index.php              入口（API）
-config.php core.php lib/ schema.php routes.php
-core/        AppRequest AppResponse AppRouter 接口
-providers/   ProviderBase OpenAI Anthropic Gemini KeyPool Factory Formatter
-middleware/  MwClientFormat MwAuth MwRateLimit MwModelAlias MwAdminAuth
-services/    SvcAuth SvcRateLimit SvcQuota SvcBilling SvcCache SvcLogger
-             SvcModelSync SvcSpeedTest
-handlers/    HdlChat HdlEmbed HdlModelList
-admin/       index.php(单页UI) actions.php(ajax) Admin*(管理类)
-data/        app.db  .key   （运行时生成，已加入 .gitignore）
-logs/        ratelimit/ 等
+index.php                    入口（API 薄壳）
+admin/index.php              后台入口（SPA 壳 + AJAX 分派）
+config.php                   配置（返回数组）
+scripts/reset_admin.php      重置默认管理员
+src/
+├── bootstrap.php            PSR-4 风格 autoloader + Bootstrap 容器/内核装配
+├── Container.php            极简依赖容器
+├── Http/                    Request/Response/Router/Kernel/中间件/Handler
+│   ├── Handler/             AbstractRelayHandler / Chat / Embed / ModelList
+│   └── Middleware/          ClientFormat / Auth / RateLimit / ModelAlias
+├── Db/                      Database(PDO) / Schema(建表+种子) / Repository/*
+├── Domain/
+│   ├── Auth/                ApiKeyAuth(O(1)) / AdminAuth(会话+强制改密)
+│   ├── Provider/            Formatter / AbstractProvider / 三家 Provider / KeyPool / Factory
+│   ├── Billing/             BillingService / QuotaService
+│   ├── Cache/  Crypto/  Logger/  RateLimit/
+│   ├── Sync/  SpeedTest/
+├── Support/                 Config / Html / Notifier / HttpException / InternalException
+└── Admin/                   AdminApp(SPA壳) / AdminController / View/views.php
+data/                        SQLite / cache / ratelimit（运行时，已 gitignore）
+logs/                        请求日志（运行时，已 gitignore）
+tests/                       run.php 零依赖测试运行器 + Test/*.php
+docs/superpowers/            设计文档 + 实施计划
 ```
 
-类加载约定：**类名即文件名**，自动加载器在 `core/ providers/ middleware/ services/ handlers/ admin/` 下查找。
+```bash
+# 运行测试（零依赖，无需安装任何东西）
+php tests/run.php
+```
 
 ---
 
-## 九、已知限制 / TODO
+## 九、安全提醒
 
-- **虚拟主机并发**：共享 FPM + SQLite + 流式长连接，高并发/高 QPS 受主机限制；建议前置 CDN/反代吸收连接。
-- **Anthropic 模型列表**：Anthropic 无公开 list 接口，`SvcModelSync` 对其返回空并提示，需手动添加。
-- **Embed 缓存回写**：`HdlEmbed` 缓存命中已实现，未命中转发的缓存回写为 TODO（建议在 `ProviderBase` 非流式分支加 `SvcCache::set` 钩子）。
-- **流式多格式**：非流式多格式已完整；流式在 OpenAI/Anthropic/Gemini 间转换尽力实现，极端字段可能需微调。
-
----
-
-## 十、安全提醒
-
-- 默认管理员密码请立即修改；`data/.key` 为加密密钥，务必备份且不要泄露（丢失则无法解密已存上游 Key）。
-- `data/`、`logs/` 与 `*.db` 已在 `.gitignore` 中，勿提交到公开仓库。
+- **默认管理员 `admin666` 首次登录必须改**；`scripts/reset_admin.php` 可随时重置。
+- `crypto_key` 为上游 Key 加密密钥，**生产环境务必修改并备份**（丢失则无法解密已存上游 Key）。
 - 上游 Key 仅以密文存库；日志对 Key 脱敏。
+- `data/`、`logs/`、`*.db` 已在 `.gitignore` 中，勿提交到公开仓库。
