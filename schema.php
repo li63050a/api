@@ -132,31 +132,8 @@ function install_schema(\PDO $db): void
     );
     ");
 
-    // 种子管理员
-    $seed = config('admin_seed');
-    $seedUser = trim((string) ($seed['username'] ?? ''));
-    if ($seedUser === '') {
-        $seedUser = 'admin';
-    }
-    $seedPwd = (string) ($seed['password'] ?? '');
-    $generated = false;
-    if ($seedPwd === '' || $seedPwd === 'change_me_now') {
-        $seedPwd = substr(bin2hex(random_bytes(9)), 0, 16); // 16 位随机初始密码
-        $generated = true;
-    }
-    if (!db_fetch($db, "SELECT id FROM admin_users WHERE username = ?", [$seedUser])) {
-        db_insert($db, 'admin_users', [
-            'username' => $seedUser,
-            'password_hash' => password_hash($seedPwd, PASSWORD_DEFAULT),
-            'role' => 'admin',
-            'created_at' => time(),
-        ]);
-        if ($generated) {
-            $hint = "初始管理员账号已自动生成随机密码（请登录后立即修改）：\n用户名: {$seedUser}\n密码: {$seedPwd}\n";
-            @file_put_contents(__DIR__ . '/data/initial_admin_password.txt', $hint, LOCK_EX);
-            error_log('[api-gateway] ' . str_replace($seedPwd, '***', $hint));
-        }
-    }
+    // 管理员账号不在建库时自动创建：首次访问后台会引导创建（见 MwAdminAuth 初始化向导）。
+    // 自动化/CLI 部署可用 scripts/reset_admin.php 创建。
 
     // 种子供应商：base_url 为 host 根，api_path 为版本路径（可改）；type 决定适配器
     $seeds = [

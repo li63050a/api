@@ -51,6 +51,15 @@ class AdminAuth
         }
     }
 
+    public function hasAnyAdmin(): bool
+    {
+        try {
+            return db_fetch(db(), "SELECT 1 FROM admin_users LIMIT 1") !== null;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
     public function current(): ?array
     {
         if (session_status() === PHP_SESSION_NONE) {
