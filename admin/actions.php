@@ -19,7 +19,7 @@ if (session_status() === PHP_SESSION_NONE) {
 $action = (string) ($_POST['action'] ?? ($_GET['action'] ?? ''));
 $auth = new AdminAuth();
 
-if (!in_array($action, ['login', 'logout'], true) && $auth->current() === null) {
+if (!in_array($action, ['login', 'logout', 'setup'], true) && $auth->current() === null) {
     http_response_code(401);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['ok' => false, 'error' => 'unauthorized']);
@@ -27,7 +27,7 @@ if (!in_array($action, ['login', 'logout'], true) && $auth->current() === null) 
 }
 
 // 只读操作无需 CSRF 校验；其余变更操作要求同源 X-Requested-With 头
-$readActions = ['login', 'logout', 'dashboard', 'logs', 'billing', 'audit', 'profile', 'metrics', 'export_logs', 'export_billing', 'users', 'keys', 'models', 'providers', 'speed_test'];
+$readActions = ['login', 'logout', 'setup', 'dashboard', 'logs', 'billing', 'audit', 'profile', 'metrics', 'export_logs', 'export_billing', 'users', 'keys', 'models', 'providers', 'speed_test'];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !in_array($action, $readActions, true)) {
     if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') !== 'XMLHttpRequest') {
         http_response_code(403);
@@ -56,6 +56,38 @@ switch ($action) {
         $ok = $auth->login($u, $p);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode($ok ? ['ok' => true] : ['ok' => false, 'error' => '用户名或密码错误']);
+        exit;
+
+    case 'setup':
+        if ($auth->hasAnyAdmin()) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => '管理员已存在']);
+            exit;
+        }
+        $u = trim((string) ($_POST['username'] ?? ''));
+        $p = (string) ($_POST['password'] ?? '');
+        if ($u === '' || strlen($p) < 8) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => '用户名不能为空，密码至少 8 位']);
+            exit;
+        }
+        try {
+            $adb = admin_db();
+            db_insert($adb, 'admin_users', [
+                'username'      => $u,
+                'password_hash' => password_hash($p, PASSWORD_DEFAULT),
+                'role'          => 'admin',
+                'created_at'    => time(),
+            ]);
+            session_regenerate_id(true);
+            $_SESSION['admin_id'] = $adb->lastInsertId();
+            $_SESSION['admin_last'] = time();
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => true]);
+        } catch (\Throwable $e) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => '创建失败：' . $e->getMessage()]);
+        }
         exit;
 
     case 'logout':

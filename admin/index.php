@@ -13,6 +13,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 $admin = (new AdminAuth())->current();
 $adminName = $admin['username'] ?? '';
+$needSetup = ($admin === null) && !(new AdminAuth())->hasAnyAdmin();
 ?>
 <!doctype html>
 <html lang="zh-CN">
@@ -136,6 +137,34 @@ $adminName = $admin['username'] ?? '';
 </head>
 <body>
 <?php if ($admin === null): ?>
+  <?php if ($needSetup): ?>
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1>API 中转站 · 初始化</h1>
+      <div class="sub">首次使用，请创建管理员账号</div>
+      <form id="setupForm">
+        <label>用户名</label>
+        <input type="text" name="username" autofocus>
+        <label>密码（至少 8 位）</label>
+        <input type="password" name="password">
+        <button type="submit">创 建</button>
+      </form>
+      <div class="login-err" id="setupErr"></div>
+    </div>
+  </div>
+  <script>
+    const ACTIONS = (location.pathname.replace(/\/admin\/?.*$/, '/admin/') + 'actions.php').replace('//', '/');
+    document.getElementById('setupForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const fd = new FormData(this);
+      fd.append('action', 'setup');
+      fetch(ACTIONS, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd })
+        .then(r => r.json())
+        .then(j => { if (j.ok) { location.reload(); } else { document.getElementById('setupErr').textContent = j.error || '创建失败'; } })
+        .catch(() => { document.getElementById('setupErr').textContent = '网络错误'; });
+    });
+  </script>
+  <?php else: ?>
   <div class="login-wrap">
     <div class="login-card">
       <h1>API 中转站 · 管理后台</h1>
@@ -162,6 +191,7 @@ $adminName = $admin['username'] ?? '';
         .catch(() => { document.getElementById('loginErr').textContent = '网络错误'; });
     });
   </script>
+  <?php endif; ?>
 <?php else: ?>
   <div class="app">
     <aside class="sidebar">
