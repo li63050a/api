@@ -11,27 +11,39 @@ require_once __DIR__ . '/lib/crypto.php';
 require_once __DIR__ . '/lib/db.php';
 
 // 环境变量覆盖（AI_API_<KEY> 覆盖顶层配置；AI_API_ADMIN_PASSWORD 覆盖种子密码）
+// 注意：对布尔/数值型配置做类型转换，否则 'false' 字符串在 if(config('debug')) 中为真值
+$envBoolKeys = [
+    'AI_API_DEBUG'           => 'debug',
+    'AI_API_METRICS_ENABLED' => 'metrics_enabled',
+];
+$envIntKeys = [
+    'AI_API_RATE_LIMIT'      => 'rate_limit_per_minute',
+];
+$applyEnv = function (string $k, $v) use ($envBoolKeys, $envIntKeys): void {
+    if (!is_string($v)) {
+        $v = (string) $v;
+    }
+    $cfg =& $GLOBALS['APP_CONFIG'];
+    if ($k === 'AI_API_ADMIN_PASSWORD') {
+        $cfg['admin_seed']['password'] = $v;
+    } elseif (isset($envBoolKeys[$k])) {
+        $cfg[$envBoolKeys[$k]] = filter_var($v, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+    } elseif (isset($envIntKeys[$k])) {
+        $cfg[$envIntKeys[$k]] = (int) $v;
+    } elseif (strpos($k, 'AI_API_') === 0) {
+        $cfg[strtolower(substr($k, 7))] = $v;
+    }
+    unset($cfg);
+};
 foreach ($_ENV as $k => $v) {
-    if (strpos($k, 'AI_API_') === 0) {
-        $cfg =& $GLOBALS['APP_CONFIG'];
-        if ($k === 'AI_API_ADMIN_PASSWORD') {
-            $cfg['admin_seed']['password'] = $v;
-        } else {
-            $cfg[strtolower(substr($k, 7))] = $v;
-        }
-        unset($cfg);
+    if (is_string($k) && strpos($k, 'AI_API_') === 0) {
+        $applyEnv($k, $v);
     }
 }
 if (function_exists('getenv')) {
     foreach (getenv() ?: [] as $k => $v) {
         if (is_string($k) && strpos($k, 'AI_API_') === 0) {
-            $cfg =& $GLOBALS['APP_CONFIG'];
-            if ($k === 'AI_API_ADMIN_PASSWORD') {
-                $cfg['admin_seed']['password'] = $v;
-            } else {
-                $cfg[strtolower(substr($k, 7))] = $v;
-            }
-            unset($cfg);
+            $applyEnv($k, $v);
         }
     }
 }

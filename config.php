@@ -5,7 +5,7 @@
 return [
     'db_path' => __DIR__ . '/data/app.db',
     'log_dir' => __DIR__ . '/logs',
-    'debug'   => true,
+    'debug'   => false,
 
     'upstream_timeout' => 120,
     'upstream_retry'   => 2,
@@ -40,4 +40,5 @@ return [
     // 告警与访问控制
     'alert_webhook'           => '',       // 失败告警 Webhook（留空关闭）
     'admin_allowed_ips'       => '',       // 允许访问后台的 IP 白名单（逗号分隔，空=不限制）
+    'trusted_proxies'         => '',       // 可信反向代理 IP（逗号分隔）；仅这些 IP 连接时才解析 X-Forwarded-For
 ];

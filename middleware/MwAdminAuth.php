@@ -35,13 +35,28 @@ class MwAdminAuth
 
     private function ipAllowed(string $allow): bool
     {
-        $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
-        if ($ip !== '') {
-            $ip = explode(',', $ip)[0];
+        $remoteIp = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+
+        // 仅在连接 IP 属于可信代理时才信任 X-Forwarded-For，避免公网伪造绕过白名单
+        $trusted = false;
+        $tp = (string) config('trusted_proxies', '');
+        if ($tp !== '' && $remoteIp !== '') {
+            foreach (explode(',', $tp) as $p) {
+                if (trim($p) === $remoteIp) {
+                    $trusted = true;
+                    break;
+                }
+            }
+        }
+
+        if ($trusted) {
+            $xff = trim((string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''));
+            $ip = $xff !== '' ? explode(',', $xff)[0] : $remoteIp;
         } else {
-            $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+            $ip = $remoteIp;
         }
         $ip = trim((string) $ip);
+
         foreach (explode(',', $allow) as $a) {
             $a = trim($a);
             if ($a === '' || $a === $ip) {

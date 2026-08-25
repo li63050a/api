@@ -23,15 +23,25 @@ abstract class ProviderBase
             return;
         }
 
+        // 流式响应已开始输出，无法再换 Key 重试，直接报错
+        if ($this->streaming) {
+            AppResponse::error('upstream error', 502);
+            return;
+        }
+
         $retries = (int) config('upstream_retry', 0);
+        $keyPool = new ProviderKeyPool();
+        $lastKey = $upstreamKey;
         for ($i = 0; $i < $retries; $i++) {
-            $nextKey = (new ProviderKeyPool())->next($model['provider_id']);
+            $nextKey = $keyPool->next($model['provider_id']);
             if ($nextKey === null) {
                 break;
             }
-            (new ProviderKeyPool())->markError($upstreamKey['id']);
-            ProviderFactory::make($this->providerName)->forward($req, $model, $nextKey);
-            return;
+            $keyPool->markError($lastKey['id']);
+            if ($this->attempt($req, $model, $nextKey, $clientFormat, $openaiBody)) {
+                return;
+            }
+            $lastKey = $nextKey;
         }
         AppResponse::error('upstream error', 502);
     }
