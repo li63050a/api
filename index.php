@@ -1,18 +1,7 @@
 <?php
-/**
- * 入口（兼容无重写的虚拟主机；base_url = https://host/index.php）
- */
-require_once __DIR__ . '/core.php';
+declare(strict_types=1);
 
-$req = new AppRequest();
+require __DIR__ . '/src/bootstrap.php';
 
-try {
-    db()->query("SELECT 1 FROM model_map LIMIT 1");
-} catch (\Throwable $e) {
-    require_once __DIR__ . '/schema.php';
-    install_schema(db());
-}
-
-$routes = require __DIR__ . '/routes.php';
-$router = new AppRouter($routes);
-$router->dispatch($req);
+$kernel = \App\Bootstrap::kernel();
+$kernel->handle(\App\Http\Request::fromGlobals())->send();
