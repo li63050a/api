@@ -179,7 +179,6 @@ final class AdminController
         $today = strtotime('today');
         $metrics = $this->logs->metrics($today);
         return [
-            'users' => $this->users->count(),
             'api_keys' => $this->keys->count(),
             'models' => (int)$this->db->value('SELECT COUNT(*) FROM model_map WHERE enabled = 1'),
             'today_requests' => $metrics['total'],
@@ -191,58 +190,11 @@ final class AdminController
         ];
     }
 
-    /* ---------- 用户 ---------- */
-
-    private function actUsersList(Request $r, array $b): array
-    {
-        $page = max(1, (int)($b['page'] ?? 1));
-        $perPage = min(100, max(1, (int)($b['per_page'] ?? 20)));
-        return [
-            'total' => $this->users->count(),
-            'page' => $page,
-            'per_page' => $perPage,
-            'items' => $this->users->all($page, $perPage),
-        ];
-    }
-
-    private function actUsersSave(Request $r, array $b): array
-    {
-        $id = (int)($b['id'] ?? 0);
-        $username = trim((string)($b['username'] ?? ''));
-        if ($username === '') {
-            throw new HttpException('用户名不能为空', 422, 'invalid_request');
-        }
-        if ($id > 0) {
-            $data = ['username' => $username];
-            if (array_key_exists('status', $b)) {
-                $data['status'] = (int)$b['status'];
-            }
-            $this->users->update($id, $data);
-        } else {
-            $id = $this->users->create(['username' => $username]);
-        }
-        $this->auditLog($r, 'users.save', ['id' => $id, 'username' => $username]);
-        return ['id' => $id];
-    }
-
-    private function actUsersDelete(Request $r, array $b): array
-    {
-        $id = (int)($b['id'] ?? 0);
-        if ($id <= 0) {
-            throw new HttpException('invalid id', 422, 'invalid_request');
-        }
-        $this->users->delete($id);
-        $this->auditLog($r, 'users.delete', ['id' => $id]);
-        return ['id' => $id];
-    }
-
     /* ---------- API 密钥 ---------- */
 
     private function actKeysList(Request $r, array $b): array
     {
-        $rows = $this->db->fetchAll(
-            'SELECT k.*, u.username FROM api_keys k LEFT JOIN users u ON u.id = k.user_id ORDER BY k.id DESC'
-        );
+        $rows = $this->db->fetchAll('SELECT * FROM api_keys ORDER BY id DESC');
         return ['items' => $rows];
     }
 
@@ -250,28 +202,40 @@ final class AdminController
     {
         $id = (int)($b['id'] ?? 0);
         $raw = null;
+        $data = [];
+        if (array_key_exists('name', $b)) {
+            $data['name'] = (string)$b['name'];
+        }
+        if (array_key_exists('status', $b)) {
+            $data['status'] = (int)$b['status'];
+        }
+        if (array_key_exists('allowed_models', $b)) {
+            $data['allowed_models'] = trim((string)$b['allowed_models']);
+        }
+        if (array_key_exists('ip_whitelist', $b)) {
+            $data['ip_whitelist'] = trim((string)$b['ip_whitelist']);
+        }
+        if (array_key_exists('quota_daily', $b)) {
+            $data['quota_daily'] = (int)$b['quota_daily'];
+        }
+        if (array_key_exists('quota_monthly', $b)) {
+            $data['quota_monthly'] = (int)$b['quota_monthly'];
+        }
         if ($id > 0) {
-            $data = [];
-            if (array_key_exists('status', $b)) {
-                $data['status'] = (int)$b['status'];
-            }
-            if (array_key_exists('name', $b)) {
-                $data['name'] = (string)$b['name'];
-            }
             $this->keys->update($id, $data);
         } else {
-            $userId = (int)($b['user_id'] ?? 0);
-            if ($userId <= 0 || $this->users->find($userId) === null) {
-                throw new HttpException('user not found', 422, 'invalid_request');
-            }
             $raw = 'sk-' . bin2hex(random_bytes(16));
             $id = $this->keys->create([
-                'user_id' => $userId,
+                'user_id' => 0,
                 'key_prefix' => substr($raw, 0, 8),
                 'key_hash' => password_hash($raw, PASSWORD_DEFAULT),
                 'key_sha256' => hash('sha256', $raw),
                 'name' => (string)($b['name'] ?? ''),
                 'status' => (int)($b['status'] ?? 1),
+                'quota_daily' => (int)($b['quota_daily'] ?? 0),
+                'quota_monthly' => (int)($b['quota_monthly'] ?? 0),
+                'allowed_models' => (string)($b['allowed_models'] ?? ''),
+                'ip_whitelist' => (string)($b['ip_whitelist'] ?? ''),
                 'created_at' => time(),
             ]);
         }
@@ -304,7 +268,10 @@ final class AdminController
             $p['key_count'] = count($p['upstream_keys']);
         }
         unset($p);
-        return ['items' => $providers];
+        return [
+            'items' => $providers,
+            'formats' => ['openai' => 'OpenAI 兼容', 'anthropic' => 'Anthropic', 'gemini' => 'Gemini'],
+        ];
     }
 
     private function actProvidersSave(Request $r, array $b): array
@@ -318,6 +285,7 @@ final class AdminController
         $data = [
             'name' => $name,
             'base_url' => $baseUrl,
+            'client_format' => (string)($b['client_format'] ?? 'openai'),
             'status' => (int)($b['status'] ?? 1),
         ];
         if ($id > 0) {
@@ -456,9 +424,9 @@ final class AdminController
             'SELECT COUNT(*) AS count, COALESCE(SUM(cost),0) AS cost, COALESCE(SUM(total_tokens),0) AS tokens FROM billing' . $w,
             $wp
         );
-        $byUser = $this->db->fetchAll(
-            'SELECT u.username, COUNT(*) AS count, COALESCE(SUM(b.cost),0) AS cost, COALESCE(SUM(b.total_tokens),0) AS tokens
-             FROM billing b JOIN users u ON u.id = b.user_id' . $w . ' GROUP BY u.id ORDER BY cost DESC LIMIT 20',
+        $byKey = $this->db->fetchAll(
+            'SELECT k.key_prefix, COUNT(*) AS count, COALESCE(SUM(b.cost),0) AS cost, COALESCE(SUM(b.total_tokens),0) AS tokens
+             FROM billing b LEFT JOIN api_keys k ON k.id = b.api_key_id' . $w . ' GROUP BY b.api_key_id ORDER BY cost DESC LIMIT 20',
             $wp
         );
         $byModel = $this->db->fetchAll(
@@ -473,7 +441,7 @@ final class AdminController
                 'cost' => (float)$total['cost'],
                 'tokens' => (int)$total['tokens'],
             ],
-            'by_user' => $byUser,
+            'by_key' => $byKey,
             'by_model' => $byModel,
         ];
     }

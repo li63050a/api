@@ -94,7 +94,6 @@ final class Bootstrap
         // 认证
         $container->set(ApiKeyAuth::class, new ApiKeyAuth(
             $container->get(ApiKeyRepository::class),
-            $container->get(UserRepository::class),
         ));
         $session = [];
         $container->set(AdminAuth::class, new AdminAuth($container->get(AdminUserRepository::class), $session));
@@ -102,7 +101,6 @@ final class Bootstrap
         // 计费 / 配额 / 熔断 / 工厂 / 同步 / 测速
         $container->set(BillingService::class, new BillingService(
             $container->get(BillingRepository::class),
-            $container->get(UserRepository::class),
         ));
         $container->set(QuotaService::class, new QuotaService($container->get(BillingRepository::class)));
         $container->set(KeyPool::class, new KeyPool(
@@ -145,7 +143,10 @@ final class Bootstrap
         $c->set('middleware:client_format', new ClientFormat());
         $c->set('middleware:auth', new Auth($c->get(ApiKeyAuth::class)));
         $c->set('middleware:rate_limit', new RateLimit($c->get(FileRateLimiter::class), $c->get(Config::class)));
-        $c->set('middleware:model_alias', new ModelAlias($c->get(ModelMapRepository::class)));
+        $c->set('middleware:model_alias', new ModelAlias(
+            $c->get(ModelMapRepository::class),
+            $c->get(ProviderRepository::class),
+        ));
 
         // Handler（均可直接 __invoke）
         $relayArgs = [

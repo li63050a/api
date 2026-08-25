@@ -19,7 +19,6 @@ final class AdminApp
     {
         $nav = [
             'dashboard' => '仪表盘',
-            'users' => '用户',
             'keys' => '密钥',
             'models' => '模型管理',
             'providers' => '供应商',

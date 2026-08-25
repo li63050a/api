@@ -20,8 +20,8 @@ final class RateLimit implements MiddlewareInterface
             return;
         }
         $auth = $request->attribute('auth', []);
-        $uid = (int)($auth['user']['id'] ?? 0);
-        $key = 'rl:' . $uid . ':' . $request->path();
+        $kid = (int)($auth['key']['id'] ?? 0);
+        $key = 'rl:' . ($kid > 0 ? $kid : 'anon') . ':' . $request->path();
         if (!$this->limiter->consume($key, $limit, 60)) {
             throw new HttpException('Rate limit exceeded, please retry later', 429, 'rate_limit_exceeded');
         }
