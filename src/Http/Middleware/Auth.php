@@ -18,7 +18,7 @@ final class Auth implements MiddlewareInterface
         if ($token === null || $token === '') {
             throw new HttpException('Missing API key', 401, 'invalid_request_error');
         }
-        $ctx = $this->auth->authenticate($token);
+        $ctx = $this->auth->authenticate($token, $request->clientIp());
         $request->setAttribute('auth', $ctx);
         $preferred = $request->header('X-Preferred-Key-Id');
         if ($preferred !== null) {

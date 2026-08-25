@@ -65,6 +65,31 @@ final class BillingRepository
         ];
     }
 
+    /**
+     * @return array{prompt:int, completion:int, total:int, count:int, cost:float}
+     */
+    public function sumTokensByKey(int $apiKeyId, int $from, int $to): array
+    {
+        $row = $this->db->fetchOne(
+            'SELECT
+                COALESCE(SUM(prompt_tokens), 0) AS prompt,
+                COALESCE(SUM(completion_tokens), 0) AS completion,
+                COALESCE(SUM(total_tokens), 0) AS total,
+                COUNT(*) AS count,
+                COALESCE(SUM(cost), 0) AS cost
+             FROM billing
+             WHERE api_key_id = ? AND status = 1 AND created_at BETWEEN ? AND ?',
+            [$apiKeyId, $from, $to]
+        );
+        return [
+            'prompt' => (int)$row['prompt'],
+            'completion' => (int)$row['completion'],
+            'total' => (int)$row['total'],
+            'count' => (int)$row['count'],
+            'cost' => (float)$row['cost'],
+        ];
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function recent(int $limit): array
     {

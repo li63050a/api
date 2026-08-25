@@ -33,6 +33,8 @@ final class Schema
             key_sha256 TEXT,
             name TEXT NOT NULL DEFAULT '',
             status INTEGER NOT NULL DEFAULT 1,
+            quota_daily INTEGER NOT NULL DEFAULT 0,
+            quota_monthly INTEGER NOT NULL DEFAULT 0,
             allowed_models TEXT NOT NULL DEFAULT '',
             ip_whitelist TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL,
@@ -46,6 +48,7 @@ final class Schema
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             base_url TEXT NOT NULL DEFAULT '',
+            client_format TEXT NOT NULL DEFAULT 'openai',
             status INTEGER NOT NULL DEFAULT 1,
             priority INTEGER NOT NULL DEFAULT 100,
             timeout INTEGER NOT NULL DEFAULT 60,
@@ -141,7 +144,26 @@ final class Schema
             created_at INTEGER NOT NULL
         )");
 
+        // 幂等列迁移：旧库补列（确保 CREATE TABLE IF NOT EXISTS 不会漏掉新列）
+        $this->ensureColumn('providers', 'client_format', "TEXT NOT NULL DEFAULT 'openai'");
+        $this->ensureColumn('api_keys', 'quota_daily', 'INTEGER NOT NULL DEFAULT 0');
+        $this->ensureColumn('api_keys', 'quota_monthly', 'INTEGER NOT NULL DEFAULT 0');
+
         $this->seedAdmin();
+    }
+
+    private function ensureColumn(string $table, string $col, string $def): void
+    {
+        $exists = false;
+        foreach ($this->db->fetchAll("PRAGMA table_info({$table})") as $row) {
+            if ((string)$row['name'] === $col) {
+                $exists = true;
+                break;
+            }
+        }
+        if (!$exists) {
+            $this->db->execute("ALTER TABLE {$table} ADD COLUMN {$col} {$def}");
+        }
     }
 
     private function seedAdmin(): void

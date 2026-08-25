@@ -36,9 +36,11 @@ abstract class AbstractRelayHandler
         $map = $request->attribute('model_map');
         $clientFormat = (string)$request->attribute('client_format', 'openai');
         $payload = $request->json();
+        $key = $auth['key'];
 
-        $this->quota->assertWithinQuota($auth['user'], 'daily');
-        $this->quota->assertWithinQuota($auth['user'], 'monthly');
+        $this->assertModelAllowed($key, $map);
+        $this->quota->assertWithinQuota($key, 'daily');
+        $this->quota->assertWithinQuota($key, 'monthly');
 
         $provider = $this->factory->make((string)$map['provider']);
         $start = microtime(true);
@@ -53,8 +55,8 @@ abstract class AbstractRelayHandler
             );
         } catch (HttpException $e) {
             $this->logger->record([
-                'user_id' => (int)$auth['user']['id'],
-                'api_key_id' => (int)$auth['key']['id'],
+                'user_id' => (int)($key['user_id'] ?? 0),
+                'api_key_id' => (int)$key['id'],
                 'provider' => (string)$map['provider'],
                 'model' => (string)$map['alias'],
                 'endpoint' => $this->endpoint(),
@@ -69,16 +71,15 @@ abstract class AbstractRelayHandler
 
         $usage = is_array($result) ? ($result['usage'] ?? null) : null;
         $this->billing->record(
-            $auth['user'],
-            $auth['key'],
+            $key,
             (string)$map['provider'],
             (string)$map['alias'],
             is_array($usage) ? (int)($usage['prompt_tokens'] ?? 0) : 0,
             is_array($usage) ? (int)($usage['completion_tokens'] ?? 0) : 0,
         );
         $this->logger->record([
-            'user_id' => (int)$auth['user']['id'],
-            'api_key_id' => (int)$auth['key']['id'],
+            'user_id' => (int)($key['user_id'] ?? 0),
+            'api_key_id' => (int)$key['id'],
             'provider' => (string)$map['provider'],
             'model' => (string)$map['alias'],
             'endpoint' => $this->endpoint(),
@@ -92,6 +93,19 @@ abstract class AbstractRelayHandler
         ]);
 
         return is_array($result) ? \App\Http\Response::json($result) : null;
+    }
+
+    /** 模型白名单校验：key.allowed_models 为空或命中 alias 时放行 */
+    private function assertModelAllowed(array $key, mixed $map): void
+    {
+        $allowed = trim((string)($key['allowed_models'] ?? ''));
+        if ($allowed === '') {
+            return;
+        }
+        $list = array_values(array_filter(array_map('trim', explode(',', $allowed)), static fn (string $m) => $m !== ''));
+        if ($list !== [] && (is_array($map) && !in_array((string)$map['alias'], $list, true))) {
+            throw new HttpException('model not allowed for this key', 403, 'model_not_allowed');
+        }
     }
 
     /** 流式回调：非流式请求返回 null；由子类/Provider 直接写 SSE */

@@ -15,6 +15,8 @@ final class ApiKeyRepository
         'key_sha256',
         'name',
         'status',
+        'quota_daily',
+        'quota_monthly',
         'allowed_models',
         'ip_whitelist',
         'expires_at',
@@ -30,6 +32,8 @@ final class ApiKeyRepository
             'key_sha256' => null,
             'name' => '',
             'status' => 1,
+            'quota_daily' => 0,
+            'quota_monthly' => 0,
             'allowed_models' => '',
             'ip_whitelist' => '',
             'expires_at' => null,
@@ -37,8 +41,8 @@ final class ApiKeyRepository
         ];
         $this->db->execute(
             'INSERT INTO api_keys
-                (user_id, key_prefix, key_hash, key_sha256, name, status, allowed_models, ip_whitelist, created_at, expires_at, last_used_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                (user_id, key_prefix, key_hash, key_sha256, name, status, quota_daily, quota_monthly, allowed_models, ip_whitelist, created_at, expires_at, last_used_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $data['user_id'],
                 $data['key_prefix'],
@@ -46,6 +50,8 @@ final class ApiKeyRepository
                 $data['key_sha256'],
                 $data['name'],
                 $data['status'],
+                $data['quota_daily'],
+                $data['quota_monthly'],
                 $data['allowed_models'],
                 $data['ip_whitelist'],
                 $data['created_at'] ?? time(),

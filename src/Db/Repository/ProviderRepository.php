@@ -11,6 +11,7 @@ final class ProviderRepository
     private const UPDATABLE = [
         'name',
         'base_url',
+        'client_format',
         'status',
         'priority',
         'timeout',
@@ -24,6 +25,7 @@ final class ProviderRepository
     {
         $data += [
             'base_url' => '',
+            'client_format' => 'openai',
             'status' => 1,
             'priority' => 100,
             'timeout' => 60,
@@ -31,11 +33,12 @@ final class ProviderRepository
             'notes' => '',
         ];
         $this->db->execute(
-            'INSERT INTO providers (name, base_url, status, priority, timeout, max_retries, notes, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO providers (name, base_url, client_format, status, priority, timeout, max_retries, notes, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $data['name'],
                 $data['base_url'],
+                $data['client_format'],
                 $data['status'],
                 $data['priority'],
                 $data['timeout'],
@@ -50,6 +53,12 @@ final class ProviderRepository
     public function find(int $id): ?array
     {
         return $this->db->fetchOne('SELECT * FROM providers WHERE id = ?', [$id]);
+    }
+
+    /** @return array<string, mixed>|null */
+    public function findByName(string $name): ?array
+    {
+        return $this->db->fetchOne('SELECT * FROM providers WHERE name = ?', [$name]);
     }
 
     /** @return array<int, array<string, mixed>> */

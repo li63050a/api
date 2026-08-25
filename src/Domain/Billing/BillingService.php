@@ -4,20 +4,16 @@ declare(strict_types=1);
 namespace App\Domain\Billing;
 
 use App\Db\Repository\BillingRepository;
-use App\Db\Repository\UserRepository;
 
 final class BillingService
 {
-    public function __construct(
-        private BillingRepository $billing,
-        private UserRepository $users,
-    ) {}
+    public function __construct(private BillingRepository $billing) {}
 
-    public function record(array $user, array $key, string $provider, string $model, int $prompt, int $completion): void
+    public function record(array $key, string $provider, string $model, int $prompt, int $completion): void
     {
         $total = $prompt + $completion;
         $this->billing->insert([
-            'user_id' => (int)$user['id'],
+            'user_id' => (int)($key['user_id'] ?? 0),
             'api_key_id' => (int)$key['id'],
             'provider' => $provider,
             'model' => $model,

@@ -37,7 +37,7 @@ final class ModelSync
             return ['id' => $providerId, 'name' => '', 'ok' => false, 'count' => 0, 'note' => '', 'error' => 'provider not found'];
         }
         $name = (string)($provider['name'] ?? '');
-        $type = strtolower($name);
+        $fmt = (string)($provider['client_format'] ?? 'openai');
         $baseUrl = rtrim((string)($provider['base_url'] ?? ''), '/');
 
         $keys = $this->upstreamKeys->byProvider($providerId);
@@ -46,7 +46,7 @@ final class ModelSync
         }
         $rawKey = $this->decryptKey((string)$keys[0]['key_value']);
 
-        if ($type === 'anthropic') {
+        if ($fmt === 'anthropic') {
             return [
                 'id' => $providerId,
                 'name' => $name,
@@ -57,7 +57,7 @@ final class ModelSync
             ];
         }
 
-        if ($type === 'gemini') {
+        if ($fmt === 'gemini') {
             $resp = $this->httpGet($baseUrl . '/models?key=' . urlencode($rawKey));
             if (!$resp['ok']) {
                 return ['id' => $providerId, 'name' => $name, 'ok' => false, 'count' => 0, 'note' => '', 'error' => $resp['detail']];
@@ -96,7 +96,7 @@ final class ModelSync
                 'alias' => $id,
                 'provider' => $name,
                 'upstream_model' => $id,
-                'client_format' => 'openai',
+                'client_format' => $fmt,
                 'enabled' => 0, // 自动同步默认停用，由管理员启用
             ]);
             $count++;
