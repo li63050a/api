@@ -220,7 +220,6 @@ function views_app_js(): string
   'use strict';
   var VIEWS = {
     dashboard: { title: '仪表盘', action: 'dashboard' },
-    users:     { title: '用户', action: 'users.list' },
     keys:      { title: 'API 密钥', action: 'keys.list' },
     models:    { title: '模型管理', action: 'modelmap.list' },
     providers: { title: '供应商', action: 'providers.list' },
@@ -249,6 +248,7 @@ function views_app_js(): string
   function stat(v, l) { return '<div class="stat"><div class="v">' + v + '</div><div class="l">' + esc(l) + '</div></div>'; }
   function b64(obj) { return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))); }
   function fmtTime(t) { return t ? new Date(t * 1000).toLocaleString('zh-CN', { hour12: false }) : '-'; }
+  function trunc(s) { s = s == null ? '' : String(s); return s.length > 24 ? s.slice(0, 24) + '…' : s; }
 
   /* ---------- 数据获取 ---------- */
   function api(action, body) {
@@ -265,7 +265,6 @@ function views_app_js(): string
   function fDashboard(d) {
     var rate = (d.today_success_rate == null ? 100 : d.today_success_rate) + '%';
     return '<h1>仪表盘</h1><div class="stats">'
-      + stat(d.users, '用户总数')
       + stat(d.api_keys, 'API Key 数')
       + stat(d.models, '启用模型')
       + stat(d.today_requests, '今日请求')
@@ -274,40 +273,29 @@ function views_app_js(): string
       + '</div>';
   }
 
-  function fUsers(data) {
-    var h = '<h1>用户</h1><div class="card"><form data-api="users.save" class="row">'
-      + '<div><label>新用户名</label><input type="text" name="username" required></div>'
-      + '<div><label>&nbsp;</label><button type="submit">新增用户</button></div>'
-      + '</form></div>';
-    h += '<table><tr><th>ID</th><th>用户名</th><th>状态</th><th>余额</th><th>日配额</th><th>月配额</th><th>创建时间</th><th>操作</th></tr>';
-    (data.items || []).forEach(function (u) {
-      h += '<tr><td>' + u.id + '</td><td>' + esc(u.username) + '</td><td>' + pillStatus(u.status) + '</td>'
-        + '<td>' + u.balance + '</td><td class="muted">' + u.quota_daily + '</td><td class="muted">' + u.quota_monthly + '</td>'
-        + '<td class="muted">' + fmtTime(u.created_at) + '</td><td>'
-        + '<button type="button" class="ghost" data-act="users.save" data-edit="' + b64({ id: u.id, username: u.username, status: u.status, balance: u.balance, quota_daily: u.quota_daily, quota_monthly: u.quota_monthly }) + '">编辑</button> '
-        + '<button type="button" class="ghost" data-api-js="users.save" data-toggle="' + u.id + '">' + (u.status == 1 ? '停用' : '启用') + '</button> '
-        + '<button type="button" class="danger" data-api-js="users.delete" data-id="' + u.id + '">删除</button>'
-        + '</td></tr>';
-    });
-    h += '</table>';
-    return h;
-  }
-
   function fKeys(data) {
-    var h = '<h1>API 密钥</h1><div class="card"><form data-api="keys.save" class="row">'
-      + '<div><label>用户 ID</label><input type="number" name="user_id" required min="1"></div>'
-      + '<div><label>备注</label><input type="text" name="name"></div>'
+    var h = '<h1>API 密钥</h1><div class="card"><form data-api="keys.save" class="grid">'
+      + '<input type="hidden" name="id" value="0">'
+      + '<div><label>备注</label><input type="text" name="name" placeholder="密钥名称/备注"></div>'
+      + '<div><label>允许模型</label><input type="text" name="allowed_models" placeholder="留空=全部, 支持多个如 gpt-4o,claude"></div>'
+      + '<div><label>IP 白名单</label><input type="text" name="ip_whitelist" placeholder="留空=不限, 支持逗号分隔IP或CIDR如 1.2.3.4,192.168.1.0/24"></div>'
+      + '<div><label>日配额token</label><input type="number" name="quota_daily" min="0" value="0"></div>'
+      + '<div><label>月配额token</label><input type="number" name="quota_monthly" min="0" value="0"></div>'
+      + '<div><label>状态</label><select name="status"><option value="1">启用</option><option value="0">停用</option></select></div>'
       + '<div><label>&nbsp;</label><button type="submit">生成密钥</button></div>'
       + '</form></div>';
     if (lastRawKey) {
       h += '<div class="card"><p class="ok">API Key 已生成（仅显示一次）：</p><div class="key-box">' + esc(lastRawKey) + '</div>'
         + '<p class="muted" style="font-size:12px">请立即复制保存，之后无法再次查看。</p></div>';
     }
-    h += '<table><tr><th>ID</th><th>前缀</th><th>用户</th><th>状态</th><th>创建时间</th><th>操作</th></tr>';
+    h += '<table><tr><th>ID</th><th>前缀</th><th>备注</th><th>状态</th><th>允许模型</th><th>IP白名单</th><th>日配额</th><th>月配额</th><th>创建时间</th><th>操作</th></tr>';
     (data.items || []).forEach(function (k) {
       h += '<tr><td>' + k.id + '</td><td><code>' + esc(k.key_prefix || '') + '…</code></td>'
-        + '<td>' + esc(k.username || '(已删除)') + '</td><td>' + pillStatus(k.status) + '</td>'
+        + '<td>' + esc(k.name || '-') + '</td><td>' + pillStatus(k.status) + '</td>'
+        + '<td class="muted">' + esc(trunc(k.allowed_models)) + '</td><td class="muted">' + esc(trunc(k.ip_whitelist)) + '</td>'
+        + '<td class="muted">' + (k.quota_daily || 0) + '</td><td class="muted">' + (k.quota_monthly || 0) + '</td>'
         + '<td class="muted">' + fmtTime(k.created_at) + '</td><td>'
+        + '<button type="button" class="ghost" data-act="keys.save" data-edit="' + b64({ id: k.id, name: k.name, status: k.status, allowed_models: k.allowed_models, ip_whitelist: k.ip_whitelist, quota_daily: k.quota_daily, quota_monthly: k.quota_monthly }) + '">编辑</button> '
         + '<button type="button" class="ghost" data-api-js="keys.save" data-toggle="' + k.id + '">' + (k.status == 1 ? '停用' : '启用') + '</button> '
         + '<button type="button" class="danger" data-api-js="keys.delete" data-id="' + k.id + '">删除</button>'
         + '</td></tr>';
@@ -339,31 +327,35 @@ function views_app_js(): string
   }
 
   function fProviders(data) {
-    var h = '<h1>供应商</h1><div class="card"><form data-api="providers.save" class="grid">'
+    var h = '<h1>供应商</h1><div class="card">'
+      + '<div class="toolbar"><button type="button" class="success" data-api-js="modelmap.sync">同步全部模型</button>'
+      + '<button type="button" class="ghost" id="provSpeedBtn">一键测速</button>'
+      + '<span class="muted">从各供应商列表接口拉取模型，并对每个上游 Key 测速。</span></div>'
+      + '<div id="provResult"></div></div>';
+    h += '<div class="card"><form data-api="providers.save" class="grid">'
       + '<input type="hidden" name="id" value="0">'
       + '<div><label>名称/类型</label><input type="text" name="name" required placeholder="openai"></div>'
+      + '<div><label>接口格式</label><select name="client_format"><option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></div>'
       + '<div><label>API URL</label><input type="text" name="base_url" required placeholder="https://api.openai.com"></div>'
       + '<div><label>API Key（明文仅本次可见）</label><input type="password" name="api_key" autocomplete="off"></div>'
       + '<div><label>状态</label><select name="status"><option value="1">启用</option><option value="0">停用</option></select></div>'
       + '<div><label>&nbsp;</label><button type="submit">新增 供应商</button></div>'
-      + '</form>'
-      + '<div class="toolbar" style="margin-top:14px"><button type="button" class="success" data-api-js="modelmap.sync">同步全部模型</button>'
-      + '<span class="muted">从各供应商列表接口拉取并写入 model_map（默认停用，需手动启用）。</span></div>'
-      + '<div id="syncResult"></div></div>';
+      + '</form></div>';
     (data.items || []).forEach(function (p) {
-      h += '<div class="prov-block"><div class="prov-head"><span class="pname">' + esc(p.name) + '</span>'
+      h += '<div class="prov-block"><div class="prov-head">'
+        + '<span class="pill on">' + esc(p.client_format || 'openai') + '</span>'
+        + '<span class="pname">' + esc(p.name) + '</span>'
         + '<span class="purl">' + esc(p.base_url) + '</span>' + pillStatus(p.status)
-        + '<button type="button" class="ghost" data-act="providers.save" data-edit="' + b64({ id: p.id, name: p.name, base_url: p.base_url, status: p.status }) + '">编辑</button> '
+        + '<button type="button" class="ghost" data-act="providers.save" data-edit="' + b64({ id: p.id, name: p.name, client_format: p.client_format, base_url: p.base_url, status: p.status }) + '">编辑</button> '
         + '<button type="button" class="success" data-api-js="modelmap.sync" data-pid="' + p.id + '">同步模型</button> '
         + '<button type="button" class="danger" data-api-js="providers.delete" data-id="' + p.id + '">删除</button>'
         + '</div><div class="prov-body"><p class="sub-t">上游密钥（加密存储）</p>';
       var keys = p.upstream_keys || [];
       if (keys.length) {
-        h += '<table><tr><th>ID</th><th>状态</th><th>权重</th><th>连续失败</th><th>操作</th></tr>';
+        h += '<table><tr><th>ID</th><th>状态</th><th>权重</th><th>连续失败</th></tr>';
         keys.forEach(function (k) {
           h += '<tr><td>' + k.id + '</td><td>' + pillStatus(k.status) + '</td><td>' + k.weight + '</td>'
-            + '<td class="muted">' + k.consecutive_failures + '</td><td>'
-            + '<button type="button" class="ghost" data-api-js="keys.save" data-toggle="' + k.id + '" data-scope="upstream">' + (k.status == 1 ? '停用' : '启用') + '</button></td></tr>';
+            + '<td class="muted">' + k.consecutive_failures + '</td></tr>';
         });
         h += '</table>';
       } else {
@@ -481,7 +473,7 @@ function views_app_js(): string
 
   function render(section, data) {
     var fns = {
-      dashboard: fDashboard, users: fUsers, keys: fKeys, models: fModels,
+      dashboard: fDashboard, keys: fKeys, models: fModels,
       providers: fProviders, logs: fLogs, billing: fBilling, audit: fAudit,
       metrics: fMetrics, profile: fProfile
     };
@@ -571,18 +563,22 @@ function views_app_js(): string
         if (btn.hasAttribute('data-id')) { body.id = btn.getAttribute('data-id'); }
         if (btn.hasAttribute('data-toggle')) { body.id = btn.getAttribute('data-toggle'); }
         if (btn.hasAttribute('data-pid')) { body.provider_id = btn.getAttribute('data-pid'); }
-        if (action === 'users.save') {
-          var row = { id: btn.getAttribute('data-toggle'), status: btn.textContent.trim() === '启用' ? 1 : 0 };
-          api('users.list', {}).then(function (j) {
-            var u = (j.data && j.data.items || []).find(function (x) { return x.id == row.id; });
-            if (u) { row.status = u.status == 1 ? 0 : 1; }
-            api(action, row).then(afterMutate);
-          });
-          return;
-        }
         api(action, body).then(afterMutate);
       });
     });
+    var sb = root.querySelector('#provSpeedBtn');
+    if (sb) {
+      sb.addEventListener('click', function () {
+        document.getElementById('provResult').innerHTML = '<span class="spinner"></span> 测速中…';
+        api('speedtest.run', {}).then(function (j) {
+          document.getElementById('provResult').innerHTML = j.ok
+            ? fSpeedResult(j.data.results)
+            : '<p class="error">' + esc((j.error && j.error.message) || '测速失败') + '</p>';
+        }).catch(function () {
+          document.getElementById('provResult').innerHTML = '<p class="error">测速失败</p>';
+        });
+      });
+    }
   }
 
   function afterMutate(j) {
