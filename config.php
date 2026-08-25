@@ -4,6 +4,7 @@
  */
 return [
     'db_path' => __DIR__ . '/data/app.db',
+    'admin_db_path' => __DIR__ . '/data/admin.db',
     'log_dir' => __DIR__ . '/logs',
     'debug'   => false,
 

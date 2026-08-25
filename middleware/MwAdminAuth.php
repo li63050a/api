@@ -136,7 +136,7 @@ class MwAdminAuth
             return;
         }
         try {
-            $db = db();
+            $db = admin_db();
             db_insert($db, 'admin_users', [
                 'username'      => $u,
                 'password_hash' => password_hash($p, PASSWORD_DEFAULT),

@@ -76,6 +76,36 @@ function db(): PDO
     return $pdo;
 }
 
+/**
+ * 管理员专用库（独立于业务主库）。删除该文件即可让后台在下次访问时重新引导创建管理员。
+ */
+function admin_db(): PDO
+{
+    static $pdo = null;
+    if ($pdo === null) {
+        $path = config('admin_db_path');
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        $pdo = new PDO('sqlite:' . $path);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        $pdo->exec('PRAGMA journal_mode=WAL;');
+        $pdo->exec('PRAGMA synchronous=NORMAL;');
+        $pdo->exec('PRAGMA busy_timeout=5000;');
+        $pdo->exec("
+        CREATE TABLE IF NOT EXISTS admin_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'admin',
+            created_at INTEGER NOT NULL
+        )");
+    }
+    return $pdo;
+}
+
 spl_autoload_register(function (string $class) {
     static $dirs = ['core', 'providers', 'middleware', 'services', 'handlers', 'admin'];
     foreach ($dirs as $d) {

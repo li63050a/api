@@ -17,7 +17,7 @@ if (!extension_loaded('pdo_sqlite')) {
     exit(1);
 }
 
-$db = db();
+$db = admin_db();
 $hash = password_hash($pass, PASSWORD_DEFAULT);
 $row = db_fetch($db, "SELECT id FROM admin_users WHERE username = ?", [$user]);
 if ($row) {

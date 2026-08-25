@@ -14,7 +14,7 @@ class AdminAuth
         if (($now < (int) ($_SESSION['admin_lock_until'] ?? 0))) {
             return false;
         }
-        $row = db_fetch(db(), "SELECT * FROM admin_users WHERE username = ?", [$username]);
+        $row = db_fetch(admin_db(), "SELECT * FROM admin_users WHERE username = ?", [$username]);
         if ($row === null) {
             $this->registerFail();
             return false;
@@ -54,7 +54,7 @@ class AdminAuth
     public function hasAnyAdmin(): bool
     {
         try {
-            return db_fetch(db(), "SELECT 1 FROM admin_users LIMIT 1") !== null;
+            return db_fetch(admin_db(), "SELECT 1 FROM admin_users LIMIT 1") !== null;
         } catch (\Throwable $e) {
             return false;
         }
@@ -75,6 +75,6 @@ class AdminAuth
             return null;
         }
         $_SESSION['admin_last'] = time();
-        return db_fetch(db(), "SELECT * FROM admin_users WHERE id = ?", [$_SESSION['admin_id']]);
+        return db_fetch(admin_db(), "SELECT * FROM admin_users WHERE id = ?", [$_SESSION['admin_id']]);
     }
 }

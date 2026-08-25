@@ -89,7 +89,7 @@ switch ($action) {
             echo json_encode(['ok' => false, 'error' => '当前密码不正确']);
             exit;
         }
-        db_update(db(), 'admin_users', ['password_hash' => password_hash($new, PASSWORD_DEFAULT)], ['id' => $adm['id']]);
+        db_update(admin_db(), 'admin_users', ['password_hash' => password_hash($new, PASSWORD_DEFAULT)], ['id' => $adm['id']]);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['ok' => true]);
         exit;
