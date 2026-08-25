@@ -106,6 +106,8 @@ if (is_dir($sessionDir) && is_writable($sessionDir)) {
 }
 
 // 首次运行自动建表（任何入口都会经过 core.php，确保后台也能初始化）
+// 仅当 pdo_sqlite 可用才执行；否则 require core.php 仍能加载（纯函数测试可脱离数据库运行）
+if (extension_loaded('pdo_sqlite')) {
 try {
     db()->query("SELECT 1 FROM model_map LIMIT 1");
 } catch (\Throwable $e) {
@@ -168,6 +170,7 @@ if (mt_rand(1, 500) === 1) {
         $db->exec('VACUUM');
     } catch (\Throwable $e) {
     }
+}
 }
 
 // 全局安全响应头（不破坏内联脚本，故未启用严格 CSP）
