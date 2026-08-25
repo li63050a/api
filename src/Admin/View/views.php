@@ -72,6 +72,9 @@ h3 { margin: 0 0 12px; font-size: 15px; }
 .sidebar nav { padding: 12px 0; flex: 1; }
 .sidebar nav a { display: flex; align-items: center; gap: 10px; padding: 12px 22px; color: #A6A8BC; font-size: 14px;
   cursor: pointer; border-left: 3px solid transparent; transition: background .15s, color .15s; }
+.sidebar nav a .ico { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; }
+.sidebar nav a .ico svg { display: block; }
+.sidebar .brand .label { line-height: 1; }
 .sidebar nav a:hover { background: var(--brand-bg); color: #fff; }
 .sidebar nav a.active { background: var(--brand-bg); color: #fff; border-left-color: var(--brand); }
 .sidebar .foot { padding: 14px 22px; font-size: 12px; color: #5D5F73; border-top: 1px solid var(--line); }
@@ -84,6 +87,13 @@ h3 { margin: 0 0 12px; font-size: 15px; }
 .topbar button { padding: 8px 16px; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
   border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; transition: background .15s; }
 .topbar button:hover { background: var(--brand-bg); border-color: var(--brand); }
+/* 汉堡菜单：仅移动端显示 */
+.nav-toggle { display: none; align-items: center; justify-content: center; padding: 7px; background: none;
+  border: 0; border-radius: var(--radius-sm); color: var(--ink); cursor: pointer; flex-shrink: 0; }
+.nav-toggle:hover { background: var(--brand-bg); color: #fff; }
+/* 移动端抽屉遮罩 */
+.sidebar-mask { position: fixed; inset: 0; z-index: 65; background: rgba(0,0,0,.55); display: none; }
+.sidebar-mask.show { display: block; }
 .content { padding: 24px; overflow: auto; }
 
 .card { background: var(--panel); padding: 20px 22px; border-radius: var(--radius); box-shadow: var(--shadow);
@@ -190,19 +200,14 @@ select[multiple].mm { min-height: 120px; }
   .content table th, .content table td { white-space: nowrap; }
 }
 
-/* 手机：侧边栏整体转为顶部栏（品牌+导航+版本号全部保留），弹窗单列 */
+/* 手机：侧边栏改为左侧抽屉，默认仅显示汉堡图标，点击后滑出完整侧栏 */
 @media (max-width: 640px) {
-  .app { flex-direction: column; }
-  .sidebar { width: 100%; flex-direction: column; border-right: 0; border-bottom: 1px solid var(--line); flex-shrink: 0; }
-  .sidebar .brand { width: 100%; justify-content: flex-start; padding: 12px 14px; font-size: 14px;
-    border-bottom: 1px solid var(--line); }
-  .sidebar nav { display: flex; flex-direction: row; width: 100%; padding: 0; overflow-x: auto; }
-  .sidebar nav a { flex: 0 0 auto; min-width: 58px; flex-direction: column; gap: 3px; padding: 10px 8px;
-    font-size: 11px; border-left: 0; border-bottom: 2px solid transparent; }
-  .sidebar nav a.active { border-left-color: transparent; border-bottom-color: var(--brand); }
-  .sidebar .foot { width: 100%; padding: 8px 14px; font-size: 11px; border-top: 1px solid var(--line); }
-  .topbar { height: auto; min-height: 52px; padding: 0 14px; flex-wrap: wrap; gap: 6px; }
-  .topbar .user { font-size: 12px; margin-right: 8px; }
+  .nav-toggle { display: inline-flex; }
+  .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 264px; z-index: 70;
+    transform: translateX(-100%); transition: transform .25s ease; box-shadow: var(--shadow); }
+  .sidebar.open { transform: translateX(0); }
+  .topbar { height: auto; min-height: 52px; padding: 0 12px; gap: 8px; }
+  .topbar .title { font-size: 14px; }
   .content { padding: 14px 12px 24px; }
   h1 { font-size: 18px; }
   .modal { width: 100%; max-width: 100%; padding: 18px 16px; }
@@ -215,6 +220,25 @@ select[multiple].mm { min-height: 120px; }
   .key-box { font-size: 12px; }
 }
 CSS;
+}
+
+/**
+ * 侧边栏导航图标（内联 SVG，currentColor 跟随文字颜色）。
+ */
+function views_nav_icons(): array
+{
+    $s = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">%s</svg>';
+    return [
+        'dashboard' => sprintf($s, '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'),
+        'keys'      => sprintf($s, '<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 21 2"/><path d="m15 8 3 3"/>'),
+        'providers' => sprintf($s, '<rect x="2" y="3" width="20" height="7" rx="1.5"/><rect x="2" y="14" width="20" height="7" rx="1.5"/><path d="M6 6.5h.01M6 17.5h.01M10 6.5h8M10 17.5h8"/>'),
+        'logs'      => sprintf($s, '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r=".5" fill="currentColor" stroke="none"/><circle cx="3.5" cy="12" r=".5" fill="currentColor" stroke="none"/><circle cx="3.5" cy="18" r=".5" fill="currentColor" stroke="none"/>'),
+        'billing'   => sprintf($s, '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 8v8M15 10.5c0-1-1.3-1.5-3-1.5s-3 .5-3 1.5 1.3 1.5 3 1.5 3 .5 3 1.5-1.3 1.5-3 1.5-3-.5-3-1.5"/>'),
+        'audit'     => sprintf($s, '<path d="M12 2 4 5v6c0 5 3.4 8.6 8 11 4.6-2.4 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>'),
+        'metrics'   => sprintf($s, '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+        'profile'   => sprintf($s, '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/>'),
+        'speedtest' => sprintf($s, '<path d="M5 12a7 7 0 0 1 14 0"/><path d="M3.5 17a9 9 0 0 1 17 0"/><path d="M12 12l3-3"/>'),
+    ];
 }
 
 /**
@@ -913,8 +937,24 @@ function views_app_js(): string
     api('logout', {}).then(function () { location.reload(); });
   });
 
+  /* ---------- 汉堡菜单（移动端抽屉） ---------- */
+  function closeDrawer() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarMask').classList.remove('show');
+  }
+  var navToggle = document.getElementById('navToggle');
+  var sidebarMask = document.getElementById('sidebarMask');
+  if (navToggle) {
+    navToggle.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = document.getElementById('sidebar').classList.toggle('open');
+      sidebarMask.classList.toggle('show', open);
+    });
+  }
+  if (sidebarMask) { sidebarMask.addEventListener('click', closeDrawer); }
+
   document.querySelectorAll('.sidebar nav a').forEach(function (a) {
-    a.addEventListener('click', function () { loadView(a.getAttribute('data-view')); });
+    a.addEventListener('click', function () { loadView(a.getAttribute('data-view')); closeDrawer(); });
   });
 
   init();
