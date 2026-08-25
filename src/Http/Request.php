@@ -21,8 +21,8 @@ final class Request
     {
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
         $path = (string)parse_url($uri, PHP_URL_PATH);
-        // 去掉入口脚本前缀（/index.php）与 base 目录
-        $path = preg_replace('#^/?index\.php#', '', $path) ?? $path;
+        // 去掉入口脚本前缀（含子目录部署，如 /api/index.php/v1/... -> /v1/...）
+        $path = preg_replace('#^(?:.*/)?index\.php#', '', $path) ?? $path;
         $path = '/' . trim($path, '/');
         if ($path === '/') {
             $path = '/';
