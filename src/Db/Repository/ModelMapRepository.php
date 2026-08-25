@@ -72,6 +72,12 @@ final class ModelMapRepository
         return $this->db->fetchAll('SELECT * FROM model_map ORDER BY id ASC');
     }
 
+    /** @return array<int, array<string, mixed>> */
+    public function allEnabled(): array
+    {
+        return $this->db->fetchAll('SELECT * FROM model_map WHERE enabled = 1 ORDER BY id ASC');
+    }
+
     public function findEnabledByAlias(string $alias): ?array
     {
         return $this->db->fetchOne(
