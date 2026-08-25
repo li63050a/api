@@ -38,7 +38,12 @@ abstract class AbstractProvider implements ProviderInterface
         $lastError = '';
 
         for ($i = 0; $i < $attempts; $i++) {
-            $upstream = $this->pool->pick((int)$model['provider_id']);
+            // 仅在该模型名关联的密钥中挑选健康密钥（model_map 的 candidate_key_ids）
+            $upstream = $this->pool->pick(
+                (int)$model['provider_id'],
+                null,
+                array_map('intval', (array)($model['candidate_key_ids'] ?? []))
+            );
             if ($upstream === null) {
                 $ctx = 'provider=' . (string)($model['provider'] ?? '')
                     . ', provider_id=' . (int)($model['provider_id'] ?? 0)

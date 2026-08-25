@@ -32,7 +32,7 @@ final class SpeedTestService
         private Config $config,
     ) {}
 
-    /** 一键测速：遍历 model_map 每个模型做真实转发探测；autoDisable 时失败自动禁用。 */
+    /** 一键测速：遍历全部密钥下的每个模型做真实转发探测；autoDisable 时失败自动禁用。 */
     public function testAllModels(bool $autoDisable = false): array
     {
         $results = [];
@@ -42,8 +42,18 @@ final class SpeedTestService
         return $results;
     }
 
+    /** 按密钥测速：只探测该密钥下的模型；autoDisable 时失败自动禁用该密钥下的模型。 */
+    public function testAllModelsByKey(int $keyId, bool $autoDisable = false): array
+    {
+        $results = [];
+        foreach ($this->modelMap->allByKeyId($keyId) as $model) {
+            $results[] = $this->testModel($model, $autoDisable);
+        }
+        return $results;
+    }
+
     /**
-     * 指定模型测速：按 model_map 行解析供应商与上游 Key，发一次最小请求。
+     * 指定模型测速：按 model_map 行解析其所属密钥与供应商，发一次最小请求。
      *
      * @param array<string, mixed> $model model_map 行
      * @return array<string, mixed>
@@ -57,12 +67,19 @@ final class SpeedTestService
         if ($provider === null) {
             return $this->modelResult($modelId, $alias, $providerName, false, 0, 0, '供应商不存在: ' . $providerName, $model, $autoDisable);
         }
-        $keys = $this->upstreamKeys->byProvider((int)$provider['id']);
-        if ($keys === []) {
-            return $this->modelResult($modelId, $alias, $providerName, false, 0, 0, '无可用上游密钥', $model, $autoDisable);
+
+        // 优先使用模型关联的密钥；旧数据 key_id=0 或无权限时回退到供应商第一把可用密钥
+        $keyId = (int)($model['key_id'] ?? 0);
+        $key = $keyId > 0 ? $this->upstreamKeys->find($keyId) : null;
+        if ($key === null || (int)$key['provider_id'] !== (int)$provider['id'] || (int)$key['status'] !== 1) {
+            $keys = $this->upstreamKeys->byProvider((int)$provider['id']);
+            if ($keys === []) {
+                return $this->modelResult($modelId, $alias, $providerName, false, 0, 0, '无可用上游密钥', $model, $autoDisable);
+            }
+            $key = $keys[0];
         }
 
-        $rawKey = $this->decryptKey((string)$keys[0]['key_value']);
+        $rawKey = $this->decryptKey((string)$key['key_value']);
         $fmt = strtolower((string)($provider['client_format'] ?? 'openai'));
         $baseUrl = rtrim((string)($provider['base_url'] ?? ''), '/');
         $upstreamModel = (string)($model['upstream_model'] ?? $alias);
@@ -88,7 +105,7 @@ final class SpeedTestService
         return $this->modelResult($modelId, $alias, $providerName, $ok, $latency, $resp['code'], $detail, $model, $autoDisable);
     }
 
-    /** 汇总探测结果；autoDisable 且失败时把模型置为停用。 */
+    /** 汇总探测结果；autoDisable 且失败时把该模型（仅当前密钥下的行）置为停用。 */
     private function modelResult(
         int $modelId,
         string $alias,
@@ -109,6 +126,7 @@ final class SpeedTestService
             'model_id' => $modelId,
             'alias' => $alias,
             'provider' => $providerName,
+            'key_id' => (int)($model['key_id'] ?? 0),
             'upstream_model' => (string)($model['upstream_model'] ?? $alias),
             'ok' => $ok,
             'latency_ms' => $latency,

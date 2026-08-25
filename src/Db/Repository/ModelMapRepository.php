@@ -11,6 +11,7 @@ final class ModelMapRepository
     private const UPDATABLE = [
         'alias',
         'provider',
+        'key_id',
         'upstream_model',
         'client_format',
         'enabled',
@@ -21,15 +22,17 @@ final class ModelMapRepository
     public function create(array $data): int
     {
         $data += [
+            'key_id' => 0,
             'client_format' => 'openai',
             'enabled' => 1,
         ];
         $this->db->execute(
-            'INSERT INTO model_map (alias, provider, upstream_model, client_format, enabled, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO model_map (alias, provider, key_id, upstream_model, client_format, enabled, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)',
             [
                 $data['alias'],
                 $data['provider'],
+                (int)$data['key_id'],
                 $data['upstream_model'],
                 $data['client_format'],
                 $data['enabled'],
@@ -39,9 +42,13 @@ final class ModelMapRepository
         return (int)$this->db->lastInsertId();
     }
 
-    public function findByAlias(string $alias): ?array
+    /** 同一模型名 + 同一密钥唯一；不存在返回 null。 */
+    public function findByAliasAndKeyId(string $alias, int $keyId): ?array
     {
-        return $this->db->fetchOne('SELECT * FROM model_map WHERE alias = ?', [$alias]);
+        return $this->db->fetchOne(
+            'SELECT * FROM model_map WHERE alias = ? AND key_id = ?',
+            [$alias, $keyId]
+        );
     }
 
     public function find(int $id): ?array
@@ -83,10 +90,20 @@ final class ModelMapRepository
         return $this->db->fetchAll('SELECT * FROM model_map WHERE enabled = 1 ORDER BY id ASC');
     }
 
-    public function findEnabledByAlias(string $alias): ?array
+    /** 指定密钥下的全部模型行。 */
+    public function allByKeyId(int $keyId): array
     {
-        return $this->db->fetchOne(
-            'SELECT * FROM model_map WHERE alias = ? AND enabled = 1',
+        return $this->db->fetchAll(
+            'SELECT * FROM model_map WHERE key_id = ? ORDER BY id ASC',
+            [$keyId]
+        );
+    }
+
+    /** 指定模型名关联的全部启用行（同一模型名可挂在多把密钥下）。 */
+    public function findAllEnabledByAlias(string $alias): array
+    {
+        return $this->db->fetchAll(
+            'SELECT * FROM model_map WHERE alias = ? AND enabled = 1 ORDER BY id ASC',
             [$alias]
         );
     }

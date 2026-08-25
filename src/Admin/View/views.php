@@ -308,6 +308,7 @@ function views_app_js(): string
   };
   var current = 'dashboard';
   var lastRawKey = null;
+  var mmKey = null; /* 模型管理弹窗中记住选中的密钥（0=全部） */
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -496,47 +497,88 @@ function views_app_js(): string
     return (formats && formats[f]) ? formats[f] : f;
   }
 
-  /* 模型管理弹窗（同步 / 一键测速 / 逐行测速 / 自动禁用 / 增删改） */
+  /* 模型管理弹窗：按"密钥"组织。同一模型名可挂在多把密钥下，
+     选中某把密钥后，同步/测速/增删改都只针对该密钥下的模型。 */
   function modelManagerModal(providers, models, extraHtml) {
     var m = getModal();
     modalAction = null;
     boxEl.className = 'modal wide';
+    /* 汇总全部上游密钥（带供应商名），作为下拉选项 */
+    var keys = [];
+    (providers || []).forEach(function (p) {
+      (p.upstream_keys || []).forEach(function (k) {
+        keys.push({ id: parseInt(k.id, 10), provider: p.name });
+      });
+    });
+    var keyOpts = '<option value="0">全部密钥</option>';
+    (keys || []).forEach(function (k) {
+      keyOpts += '<option value="' + k.id + '">' + esc(k.provider) + ' · 密钥#' + k.id + '</option>';
+    });
+    /* 默认选中上一把密钥，否则第一把具体密钥（体现"每个密钥单独搞"） */
+    var defaultKey = mmKey != null ? String(mmKey)
+      : (keys.length ? String(keys[0].id) : '0');
     boxEl.innerHTML = '<button type="button" class="m-close" data-mclose>&times;</button>'
       + '<h3>模型管理</h3>'
       + '<div class="toolbar">'
+      + '<label style="display:inline-flex;align-items:center;gap:6px;margin:0"><span>所属密钥</span>'
+      + '<select id="mmKeySel">' + keyOpts + '</select></label>'
       + '<button type="button" class="success" id="mmNewBtn">新增模型</button>'
-      + '<button type="button" class="ghost" id="mmSyncBtn">同步全部模型</button>'
-      + '<button type="button" class="ghost" id="mmSpeedBtn">一键测速</button>'
+      + '<button type="button" class="ghost" id="mmSyncBtn">同步该密钥模型</button>'
+      + '<button type="button" class="ghost" id="mmSpeedBtn">测速该密钥模型</button>'
       + '<label style="display:inline-flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="mmAutoDisable" style="width:auto"> 测速失败自动禁用</label>'
       + '</div>'
       + '<div id="mmResult">' + (extraHtml || '') + '</div>'
-      + '<div id="mmTableWrap">' + fModelTable(models) + '</div>'
+      + '<div id="mmTableWrap">' + fModelTable(models, defaultKey) + '</div>'
       + '<div class="m-actions"><button type="button" class="ghost" data-mclose>关闭</button></div>';
     m.mask.classList.add('show');
 
     boxEl.querySelectorAll('[data-mclose]').forEach(function (b) { b.addEventListener('click', closeModal); });
-    boxEl.querySelector('#mmNewBtn').addEventListener('click', function () { editModelModal(null, providers); });
+    var keySel = boxEl.querySelector('#mmKeySel');
+    keySel.value = defaultKey;
+    keySel.addEventListener('change', function () {
+      mmKey = parseInt(keySel.value, 10) || 0;
+      boxEl.querySelector('#mmTableWrap').innerHTML = fModelTable(models, mmKey);
+      bindModelTableButtons(providers, models, mmKey, keys);
+    });
+    boxEl.querySelector('#mmNewBtn').addEventListener('click', function () {
+      if (!keys.length) { toast('请先在上游密钥中添加密钥', true); return; }
+      var cur = parseInt(keySel.value, 10) || keys[0].id;
+      editModelModal(null, keys, cur);
+    });
     boxEl.querySelector('#mmSyncBtn').addEventListener('click', function () {
       var r = boxEl.querySelector('#mmResult');
-      r.innerHTML = '<span class="spinner"></span> 同步中…';
-      api('modelmap.sync', {}).then(function (j) {
-        var html = j.ok
-          ? '<p class="ok">同步完成，共处理 ' + ((j.data.results || []).length) + ' 个供应商。</p>'
-          : '<p class="error">' + esc((j.error && j.error.message) || '同步失败') + '</p>';
+      var keyId = parseInt(keySel.value, 10) || 0;
+      var label = keyId ? ('密钥#' + keyId) : '全部密钥';
+      r.innerHTML = '<span class="spinner"></span> 正在同步 ' + esc(label) + ' 的模型…';
+      api('modelmap.sync', keyId ? { key_id: keyId } : {}).then(function (j) {
+        var html;
+        if (j.ok) {
+          var n = 0, errs = [];
+          (j.data.results || []).forEach(function (d) {
+            n += (d.count || 0);
+            if (d.error) { errs.push('密钥#' + d.key_id + ': ' + d.error); }
+          });
+          html = '<p class="' + (errs.length ? 'error' : 'ok') + '">' + esc(label) + ' 同步完成，新增 ' + n + ' 个模型'
+            + (errs.length ? '；' + esc(errs.join('；')) : '') + '。</p>';
+        } else {
+          html = '<p class="error">' + esc((j.error && j.error.message) || '同步失败') + '</p>';
+        }
         refreshModelManager(html);
       }).catch(function () { refreshModelManager('<p class="error">同步失败</p>'); });
     });
     boxEl.querySelector('#mmSpeedBtn').addEventListener('click', function () {
       var r = boxEl.querySelector('#mmResult');
-      r.innerHTML = '<span class="spinner"></span> 测速中…';
+      var keyId = parseInt(keySel.value, 10) || 0;
+      var label = keyId ? ('密钥#' + keyId) : '全部密钥';
+      r.innerHTML = '<span class="spinner"></span> 正在测速 ' + esc(label) + ' 的模型…';
       var auto = boxEl.querySelector('#mmAutoDisable').checked ? 1 : 0;
-      api('speedtest.all', { auto_disable: auto }).then(function (j) {
+      api('speedtest.all', keyId ? { key_id: keyId, auto_disable: auto } : { auto_disable: auto }).then(function (j) {
         var html = j.ok ? fModelSpeedResults(j.data.results)
           : '<p class="error">' + esc((j.error && j.error.message) || '测速失败') + '</p>';
         refreshModelManager(html);
       }).catch(function () { refreshModelManager('<p class="error">测速失败</p>'); });
     });
-    bindModelTableButtons(providers, models);
+    bindModelTableButtons(providers, models, defaultKey, keys);
   }
 
   function refreshModelManager(extraHtml) {
@@ -546,17 +588,24 @@ function views_app_js(): string
     });
   }
 
-  function fModelTable(models) {
-    var h = '<table><tr><th>ID</th><th>别名</th><th>供应商</th><th>上游模型</th><th>格式</th><th>状态</th><th>测速</th><th>操作</th></tr>';
+  function fModelTable(models, keyId) {
+    keyId = parseInt(keyId || '0', 10) || 0;
+    var h = '<table><tr><th>ID</th><th>别名</th><th>供应商</th><th>密钥</th><th>上游模型</th><th>格式</th><th>状态</th><th>测速</th><th>操作</th></tr>';
+    var shown = 0;
     (models || []).forEach(function (m) {
+      if (keyId > 0 && parseInt(m.key_id || '0', 10) !== keyId) { return; }
+      shown++;
       h += '<tr><td>' + m.id + '</td><td>' + esc(m.alias) + '</td><td>' + esc(m.provider) + '</td>'
+        + '<td>密钥#' + (m.key_id || 0) + '</td>'
         + '<td>' + esc(m.upstream_model || '-') + '</td><td>' + esc(m.client_format) + '</td><td>' + pillStatus(m.enabled) + '</td>'
         + '<td><button type="button" class="ghost" data-speedmodel="' + m.id + '">测速</button></td>'
         + '<td><button type="button" class="ghost" data-editmodel="' + m.id + '">编辑</button> '
         + '<button type="button" class="ghost" data-togglemodel="' + m.id + '">' + (m.enabled == 1 ? '禁用' : '启用') + '</button> '
         + '<button type="button" class="danger" data-delmodel="' + m.id + '">删除</button></td></tr>';
     });
-    if (!(models || []).length) { h += '<tr><td colspan="8" class="muted">暂无模型，点击「同步全部模型」或「新增模型」。</td></tr>'; }
+    if (!shown) {
+      h += '<tr><td colspan="9" class="muted">' + (keyId ? '该密钥下暂无模型，点击「同步该密钥模型」或「新增模型」。' : '暂无模型，点击「同步该密钥模型」或「新增模型」。') + '</td></tr>';
+    }
     h += '</table>';
     return h;
   }
@@ -565,23 +614,25 @@ function views_app_js(): string
     if (!results || !results.length) { return '<p class="error">无数据</p>'; }
     var rows = results.map(function (d) {
       return '<tr><td>' + esc(d.alias) + '</td><td>' + esc(d.provider) + '</td>'
+        + '<td>密钥#' + (d.key_id || 0) + '</td>'
         + '<td>' + (d.ok ? '<span class="pill on">可用</span>' : '<span class="pill off">不可用</span>') + '</td>'
         + '<td>' + (d.latency_ms != null ? d.latency_ms + ' ms' : '-') + '</td>'
         + '<td>' + (d.auto_disabled ? '<span class="pill warn">已自动禁用</span>' : '-') + '</td>'
         + '<td class="muted">' + esc(d.detail) + '</td></tr>';
     }).join('');
-    return '<table><tr><th>模型</th><th>供应商</th><th>状态</th><th>延迟</th><th>自动禁用</th><th>详情</th></tr>' + rows + '</table>';
+    return '<table><tr><th>模型</th><th>供应商</th><th>密钥</th><th>状态</th><th>延迟</th><th>自动禁用</th><th>详情</th></tr>' + rows + '</table>';
   }
 
-  function bindModelTableButtons(providers, models) {
+  function bindModelTableButtons(providers, models, keyId, keys) {
     boxEl.querySelectorAll('[data-editmodel]').forEach(function (b) {
       var mm = findModel(models, b.getAttribute('data-editmodel'));
-      b.addEventListener('click', function () { editModelModal(mm, providers); });
+      b.addEventListener('click', function () { editModelModal(mm, keys, keyId); });
     });
     boxEl.querySelectorAll('[data-togglemodel]').forEach(function (b) {
       b.addEventListener('click', function () {
         var mm = findModel(models, b.getAttribute('data-togglemodel'));
-        api('modelmap.save', { id: mm.id, alias: mm.alias, provider: mm.provider, upstream_model: mm.upstream_model, client_format: mm.client_format, enabled: mm.enabled == 1 ? 0 : 1 })
+        if (!mm.key_id) { toast('该模型未关联密钥，请删除后按密钥重新同步/新增', true); return; }
+        api('modelmap.save', { id: mm.id, alias: mm.alias, provider: mm.provider, key_id: mm.key_id, upstream_model: mm.upstream_model, client_format: mm.client_format, enabled: mm.enabled == 1 ? 0 : 1 })
           .then(function (j) {
             if (j.ok) { toast('操作成功'); refreshModelManager(); }
             else { toast((j.error && j.error.message) || '操作失败', true); }
@@ -617,17 +668,19 @@ function views_app_js(): string
     return null;
   }
 
-  function editModelModal(m, providers) {
+  /* 新增/编辑模型：所属密钥必选，供应商由所选密钥推导（保证 key_id 与 provider 匹配）。 */
+  function editModelModal(m, keys, defaultKeyId) {
     var isNew = !m;
-    var pOpts = '';
-    (providers || []).forEach(function (p) {
-      var sel = m && m.provider === p.name ? ' selected' : '';
-      pOpts += '<option value="' + esc(p.name) + '"' + sel + '>' + esc(p.name) + '</option>';
+    var curKey = m ? m.key_id : (defaultKeyId || (keys && keys.length ? keys[0].id : 0));
+    var kOpts = '';
+    (keys || []).forEach(function (k) {
+      var sel = String(k.id) === String(curKey) ? ' selected' : '';
+      kOpts += '<option value="' + k.id + '"' + sel + '>' + esc(k.provider) + ' · 密钥#' + k.id + '</option>';
     });
     openModal(isNew ? '新增模型' : '编辑模型',
       '<input type="hidden" name="id" value="' + (m ? m.id : 0) + '">'
       + '<div class="full"><label>别名 (alias，对外名)</label><input type="text" name="alias" value="' + esc(m ? m.alias : '') + '" required></div>'
-      + '<div class="full"><label>供应商</label><select name="provider">' + pOpts + '</select></div>'
+      + '<div class="full"><label>所属密钥（决定供应商）</label><select name="key_id">' + kOpts + '</select></div>'
       + '<div class="full"><label>上游模型（真实模型名）</label><input type="text" name="upstream_model" value="' + esc(m ? m.upstream_model : '') + '"></div>'
       + '<div class="full"><label>客户端格式</label><select name="client_format">'
       + '<option value="openai"' + (m && m.client_format == 'anthropic' ? '' : (m && m.client_format == 'gemini' ? '' : ' selected')) + '>OpenAI 兼容</option>'
@@ -636,8 +689,12 @@ function views_app_js(): string
       + '<div class="full"><label>状态</label><select name="enabled">'
       + '<option value="1"' + (m && m.enabled == 0 ? '' : ' selected') + '>启用</option>'
       + '<option value="0"' + (m && m.enabled == 0 ? ' selected' : '') + '>停用</option></select></div>'
-      + '<div class="full"><p class="hint" style="margin:0">上游模型留空时默认等于别名。</p></div>',
+      + '<div class="full"><p class="hint" style="margin:0">同一模型名可挂到多把密钥下，每把密钥独立管理。</p></div>',
       function (body) {
+        var k = null;
+        for (var i = 0; i < (keys || []).length; i++) { if (String(keys[i].id) === String(body.key_id)) { k = keys[i]; break; } }
+        if (!k) { toast('请选择所属密钥', true); return; }
+        body.provider = k.provider;
         api('modelmap.save', body).then(function (j) {
           if (j.ok) { toast('操作成功'); refreshModelManager(); }
           else { toast((j.error && j.error.message) || '保存失败', true); }

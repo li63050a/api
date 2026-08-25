@@ -13,13 +13,22 @@ final class ModelListHandler
 
     public function __invoke(Request $request): Response
     {
-        $rows = $this->maps->allEnabled();
-        $data = array_map(static fn (array $m) => [
-            'id' => $m['alias'],
-            'object' => 'model',
-            'created' => (int)($m['created_at'] ?? time()),
-            'owned_by' => $m['provider'],
-        ], $rows);
+        // 同一模型名可挂在多把密钥下，列表按 alias 去重
+        $seen = [];
+        $data = [];
+        foreach ($this->maps->allEnabled() as $m) {
+            $alias = (string)$m['alias'];
+            if (isset($seen[$alias])) {
+                continue;
+            }
+            $seen[$alias] = true;
+            $data[] = [
+                'id' => $alias,
+                'object' => 'model',
+                'created' => (int)($m['created_at'] ?? time()),
+                'owned_by' => $m['provider'],
+            ];
+        }
         return Response::json(['object' => 'list', 'data' => $data]);
     }
 }

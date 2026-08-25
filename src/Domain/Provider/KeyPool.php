@@ -15,10 +15,22 @@ final class KeyPool
         private Config $config,
     ) {}
 
-    /** @return array<string, mixed>|null */
-    public function pick(int $providerId, ?int $preferredId = null): ?array
+    /**
+     * 选择一把健康上游密钥。
+     *
+     * @param int[] $onlyIds 非空时仅在这些密钥中挑选（按模型名过滤出支持该模型的密钥）
+     * @return array<string, mixed>|null
+     */
+    public function pick(int $providerId, ?int $preferredId = null, array $onlyIds = []): ?array
     {
         $candidates = $this->keys->byProvider($providerId);
+        if ($onlyIds !== []) {
+            $allowed = array_flip(array_map('intval', $onlyIds));
+            $candidates = array_values(array_filter(
+                $candidates,
+                static fn (array $k): bool => isset($allowed[(int)$k['id']])
+            ));
+        }
         $healthy = array_values(array_filter($candidates, fn ($k) => !$this->isDisabled((int)$k['id'])));
         if ($healthy === []) {
             return null;

@@ -25,9 +25,15 @@ final class ModelAlias implements MiddlewareInterface
         if ($model === '') {
             throw new HttpException('Missing model', 400, 'invalid_request_error');
         }
-        $map = $this->maps->findEnabledByAlias($model);
-        if ($map !== null) {
-            $request->setAttribute('model_map', $this->resolveMap($map));
+        // 同一模型名可挂在多把密钥下：取全部启用行，转发时在这些密钥中挑健康的一把
+        $maps = $this->maps->findAllEnabledByAlias($model);
+        if ($maps !== []) {
+            $resolved = $this->resolveMap($maps[0]);
+            $resolved['candidate_key_ids'] = array_values(array_unique(array_map(
+                'intval',
+                array_column($maps, 'key_id')
+            )));
+            $request->setAttribute('model_map', $resolved);
             return;
         }
         // 兜底：直连同名模型（openai 格式）
@@ -41,6 +47,7 @@ final class ModelAlias implements MiddlewareInterface
             'base_url' => $provider === null ? '' : (string)($provider['base_url'] ?? ''),
             'timeout' => $provider === null ? 0 : (int)($provider['timeout'] ?? 0),
             'enabled' => 1,
+            'candidate_key_ids' => [],
         ]);
     }
 

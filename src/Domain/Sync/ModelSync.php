@@ -11,7 +11,9 @@ use App\Domain\Crypto\CryptoService;
 use App\Support\Config;
 
 /**
- * 模型同步：从上游供应商拉取模型列表写入 model_map。
+ * 模型同步：按"密钥"逐把拉取上游模型列表，写入各自 key_id 下的 model_map。
+ *
+ * 同一模型名（alias）可挂在多把密钥下，互不覆盖；同步结果按密钥返回。
  *
  * 三家供应商 list 端点差异：
  *  - openai：GET {base_url}/models，Bearer 鉴权
@@ -29,30 +31,30 @@ final class ModelSync
         private Config $config,
     ) {}
 
-    /** @return array{id:int, name:string, ok:bool, count:int, note:string, error:string} */
-    public function syncProvider(int $providerId): array
+    /** @return array{id:int, key_id:int, provider:string, ok:bool, count:int, note:string, error:string} */
+    public function syncKey(int $keyId): array
     {
-        $provider = $this->providers->find($providerId);
+        $key = $this->upstreamKeys->find($keyId);
+        if ($key === null) {
+            return ['id' => $keyId, 'key_id' => $keyId, 'provider' => '', 'ok' => false, 'count' => 0, 'note' => '', 'error' => 'upstream key not found'];
+        }
+        $provider = $this->providers->find((int)$key['provider_id']);
         if ($provider === null) {
-            return ['id' => $providerId, 'name' => '', 'ok' => false, 'count' => 0, 'note' => '', 'error' => 'provider not found'];
+            return ['id' => $keyId, 'key_id' => $keyId, 'provider' => '', 'ok' => false, 'count' => 0, 'note' => '', 'error' => 'provider not found'];
         }
         $name = (string)($provider['name'] ?? '');
         $fmt = (string)($provider['client_format'] ?? 'openai');
         $baseUrl = rtrim((string)($provider['base_url'] ?? ''), '/');
-
-        $keys = $this->upstreamKeys->byProvider($providerId);
-        if ($keys === []) {
-            return ['id' => $providerId, 'name' => $name, 'ok' => false, 'count' => 0, 'note' => '', 'error' => 'no available upstream key'];
-        }
-        $rawKey = $this->decryptKey((string)$keys[0]['key_value']);
+        $rawKey = $this->decryptKey((string)$key['key_value']);
 
         if ($fmt === 'anthropic') {
             return [
-                'id' => $providerId,
-                'name' => $name,
+                'id' => $keyId,
+                'key_id' => $keyId,
+                'provider' => $name,
                 'ok' => true,
                 'count' => 0,
-                'note' => 'Anthropic 无公开模型列表接口，跳过自动同步，请手动维护 model_map。',
+                'note' => 'Anthropic 无公开模型列表接口，跳过自动同步，请手动维护模型。',
                 'error' => '',
             ];
         }
@@ -60,7 +62,7 @@ final class ModelSync
         if ($fmt === 'gemini') {
             $resp = $this->httpGet($baseUrl . '/models?key=' . urlencode($rawKey));
             if (!$resp['ok']) {
-                return ['id' => $providerId, 'name' => $name, 'ok' => false, 'count' => 0, 'note' => '', 'error' => $resp['detail']];
+                return ['id' => $keyId, 'key_id' => $keyId, 'provider' => $name, 'ok' => false, 'count' => 0, 'note' => '', 'error' => $resp['detail']];
             }
             $data = json_decode($resp['body'], true) ?: [];
             $fetched = [];
@@ -75,7 +77,7 @@ final class ModelSync
             // openai 及其它 Bearer 风格
             $resp = $this->httpGet($baseUrl . '/models', ['Authorization: Bearer ' . $rawKey]);
             if (!$resp['ok']) {
-                return ['id' => $providerId, 'name' => $name, 'ok' => false, 'count' => 0, 'note' => '', 'error' => $resp['detail']];
+                return ['id' => $keyId, 'key_id' => $keyId, 'provider' => $name, 'ok' => false, 'count' => 0, 'note' => '', 'error' => $resp['detail']];
             }
             $data = json_decode($resp['body'], true) ?: [];
             $fetched = [];
@@ -89,12 +91,13 @@ final class ModelSync
 
         $count = 0;
         foreach ($fetched as $id) {
-            if ($this->modelMap->findByAlias($id) !== null) {
-                continue; // 已存在则跳过，避免覆盖手动维护的配置
+            if ($this->modelMap->findByAliasAndKeyId($id, $keyId) !== null) {
+                continue; // 该密钥下已存在则跳过，避免覆盖手动维护的配置
             }
             $this->modelMap->create([
                 'alias' => $id,
                 'provider' => $name,
+                'key_id' => $keyId, // 关联当前密钥
                 'upstream_model' => $id,
                 'client_format' => $fmt,
                 'enabled' => 0, // 自动同步默认停用，由管理员启用
@@ -103,21 +106,32 @@ final class ModelSync
         }
 
         return [
-            'id' => $providerId,
-            'name' => $name,
+            'id' => $keyId,
+            'key_id' => $keyId,
+            'provider' => $name,
             'ok' => true,
             'count' => $count,
-            'note' => $count > 0 ? "同步 {$count} 个模型" : '无新增（已存在）',
+            'note' => $count > 0 ? "同步 {$count} 个模型" : '无新增（该密钥下已存在）',
             'error' => '',
         ];
     }
 
-    /** @return array<int, array{id:int, name:string, ok:bool, count:int, note:string, error:string}> */
+    /** 同步某供应商下的全部密钥。 */
+    public function syncProvider(int $providerId): array
+    {
+        $results = [];
+        foreach ($this->upstreamKeys->byProvider($providerId) as $key) {
+            $results[] = $this->syncKey((int)$key['id']);
+        }
+        return $results;
+    }
+
+    /** 同步全部密钥。 */
     public function syncAll(): array
     {
         $results = [];
-        foreach ($this->providers->all() as $provider) {
-            $results[] = $this->syncProvider((int)$provider['id']);
+        foreach ($this->db->fetchAll('SELECT id FROM upstream_keys ORDER BY id ASC') as $row) {
+            $results[] = $this->syncKey((int)$row['id']);
         }
         return $results;
     }

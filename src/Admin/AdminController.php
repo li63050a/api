@@ -193,8 +193,14 @@ final class AdminController
     {
         $rows = $this->db->fetchAll('SELECT * FROM api_keys ORDER BY id DESC');
         $models = [];
+        $seen = [];
         foreach ($this->modelMap->all() as $m) {
-            $models[] = ['alias' => (string)$m['alias'], 'provider' => (string)$m['provider'], 'enabled' => (int)$m['enabled']];
+            $alias = (string)$m['alias'];
+            if (isset($seen[$alias])) {
+                continue; // 同一模型名多密钥时，下拉只展示一次
+            }
+            $seen[$alias] = true;
+            $models[] = ['alias' => $alias, 'provider' => (string)$m['provider'], 'enabled' => (int)$m['enabled']];
         }
         return ['items' => $rows, 'models' => $models];
     }
@@ -278,6 +284,7 @@ final class AdminController
                 'id' => (int)$m['id'],
                 'alias' => (string)$m['alias'],
                 'provider' => (string)$m['provider'],
+                'key_id' => (int)($m['key_id'] ?? 0),
                 'upstream_model' => (string)$m['upstream_model'],
                 'client_format' => (string)$m['client_format'],
                 'enabled' => (int)$m['enabled'],
@@ -430,22 +437,37 @@ final class AdminController
         $id = (int)($b['id'] ?? 0);
         $alias = trim((string)($b['alias'] ?? ''));
         $provider = trim((string)($b['provider'] ?? ''));
+        $keyId = (int)($b['key_id'] ?? 0);
         if ($alias === '' || $provider === '') {
             throw new HttpException('alias 与 provider 必填', 422, 'invalid_request');
+        }
+        if ($keyId <= 0) {
+            throw new HttpException('key_id 必填（模型需挂在具体密钥下）', 422, 'invalid_request');
+        }
+        $key = $this->upstreamKeys->find($keyId);
+        $keyProvider = $key !== null ? $this->providers->find((int)$key['provider_id']) : null;
+        if ($key === null || $keyProvider === null || (string)$keyProvider['name'] !== $provider) {
+            throw new HttpException('key_id 与 provider 不匹配', 422, 'invalid_request');
         }
         $data = [
             'alias' => $alias,
             'provider' => $provider,
+            'key_id' => $keyId,
             'upstream_model' => (string)($b['upstream_model'] ?? $alias),
             'client_format' => (string)($b['client_format'] ?? 'openai'),
             'enabled' => (int)($b['enabled'] ?? 1),
         ];
+        // 同一密钥下不允许重复别名（唯一约束 (alias, key_id)），提前给出友好提示
+        $dup = $this->modelMap->findByAliasAndKeyId($alias, $keyId);
+        if ($dup !== null && (int)$dup['id'] !== $id) {
+            throw new HttpException('该密钥下已存在同名模型：' . $alias, 422, 'invalid_request');
+        }
         if ($id > 0) {
             $this->modelMap->update($id, $data);
         } else {
             $id = $this->modelMap->create($data);
         }
-        $this->auditLog($r, 'modelmap.save', ['id' => $id, 'alias' => $alias]);
+        $this->auditLog($r, 'modelmap.save', ['id' => $id, 'alias' => $alias, 'key_id' => $keyId]);
         return ['id' => $id];
     }
 
@@ -462,11 +484,16 @@ final class AdminController
 
     private function actModelmapSync(Request $r, array $b): array
     {
+        $keyId = (int)($b['key_id'] ?? 0);
         $pid = (int)($b['provider_id'] ?? 0);
-        $results = $pid > 0
-            ? [$this->modelSync()->syncProvider($pid)]
-            : $this->modelSync()->syncAll();
-        $this->auditLog($r, 'modelmap.sync', ['provider_id' => $pid]);
+        if ($keyId > 0) {
+            $results = [$this->modelSync()->syncKey($keyId)];
+        } elseif ($pid > 0) {
+            $results = $this->modelSync()->syncProvider($pid);
+        } else {
+            $results = $this->modelSync()->syncAll();
+        }
+        $this->auditLog($r, 'modelmap.sync', ['key_id' => $keyId, 'provider_id' => $pid]);
         return ['results' => $results];
     }
 
@@ -567,12 +594,18 @@ final class AdminController
 
     /* ---------- 模型级测速 / 系统 ---------- */
 
-    /** 一键测速：对 model_map 每个模型做一次真实转发探测；auto_disable=1 时失败自动禁用。 */
+    /**
+     * 一键测速：key_id > 0 时只测该密钥下模型，否则测全部模型。
+     * auto_disable=1 时失败自动禁用对应密钥下的模型。
+     */
     private function actSpeedtestAll(Request $r, array $b): array
     {
+        $keyId = (int)($b['key_id'] ?? 0);
         $autoDisable = (int)($b['auto_disable'] ?? 0) === 1;
-        $results = $this->speedTest()->testAllModels($autoDisable);
-        $this->auditLog($r, 'speedtest.all', ['count' => count($results), 'auto_disable' => $autoDisable]);
+        $results = $keyId > 0
+            ? $this->speedTest()->testAllModelsByKey($keyId, $autoDisable)
+            : $this->speedTest()->testAllModels($autoDisable);
+        $this->auditLog($r, 'speedtest.all', ['key_id' => $keyId, 'count' => count($results), 'auto_disable' => $autoDisable]);
         return ['results' => $results];
     }
 

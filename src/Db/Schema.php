@@ -13,6 +13,8 @@ final class Schema
     {
         $this->db->execute('PRAGMA journal_mode = WAL');
         $this->db->execute('PRAGMA foreign_keys = ON');
+        // model_map 旧库迁移：旧表无 key_id（alias 全局唯一）→ 重建为"模型名+多密钥"
+        $this->migrateModelMap();
         // users
         $this->db->execute("CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,16 +58,20 @@ final class Schema
             notes TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL
         )");
-        // model_map
+        // model_map：同一模型名(alias)可挂在多把密钥(key_id)下，各自独立启停/测速
         $this->db->execute("CREATE TABLE IF NOT EXISTS model_map (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            alias TEXT NOT NULL UNIQUE,
+            alias TEXT NOT NULL,
             provider TEXT NOT NULL,
+            key_id INTEGER NOT NULL DEFAULT 0,
             upstream_model TEXT NOT NULL,
             client_format TEXT NOT NULL DEFAULT 'openai',
             enabled INTEGER NOT NULL DEFAULT 1,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            UNIQUE(alias, key_id)
         )");
+        $this->db->execute('CREATE INDEX IF NOT EXISTS idx_model_map_key ON model_map(key_id)');
+        $this->db->execute('CREATE INDEX IF NOT EXISTS idx_model_map_alias ON model_map(alias)');
         // upstream_keys
         $this->db->execute("CREATE TABLE IF NOT EXISTS upstream_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,6 +156,44 @@ final class Schema
         $this->ensureColumn('api_keys', 'quota_monthly', 'INTEGER NOT NULL DEFAULT 0');
 
         $this->seedAdmin();
+    }
+
+    /**
+     * 旧版 model_map 无 key_id（alias 全局 UNIQUE，模型合并到供应商）。
+     * 检测到缺列时重建表：旧行归入 key_id=0，解除 alias 全局唯一限制。
+     */
+    private function migrateModelMap(): void
+    {
+        $exists = $this->db->fetchOne("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'model_map'");
+        if ($exists === null) {
+            return; // 新库，由下方 CREATE TABLE 直接建表
+        }
+        $cols = [];
+        foreach ($this->db->fetchAll('PRAGMA table_info(model_map)') as $row) {
+            $cols[] = (string)$row['name'];
+        }
+        if (in_array('key_id', $cols, true)) {
+            return;
+        }
+        $this->db->execute('ALTER TABLE model_map RENAME TO model_map_legacy');
+        $this->db->execute("CREATE TABLE model_map (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alias TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            key_id INTEGER NOT NULL DEFAULT 0,
+            upstream_model TEXT NOT NULL,
+            client_format TEXT NOT NULL DEFAULT 'openai',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            UNIQUE(alias, key_id)
+        )");
+        $this->db->execute('CREATE INDEX IF NOT EXISTS idx_model_map_key ON model_map(key_id)');
+        $this->db->execute('CREATE INDEX IF NOT EXISTS idx_model_map_alias ON model_map(alias)');
+        $this->db->execute(
+            'INSERT INTO model_map (alias, provider, key_id, upstream_model, client_format, enabled, created_at)
+             SELECT alias, provider, 0, upstream_model, client_format, enabled, created_at FROM model_map_legacy'
+        );
+        $this->db->execute('DROP TABLE model_map_legacy');
     }
 
     private function ensureColumn(string $table, string $col, string $def): void

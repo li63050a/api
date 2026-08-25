@@ -68,6 +68,12 @@ final class UpstreamKeyRepository
         return $this->db->execute('DELETE FROM upstream_keys WHERE provider_id = ?', [$providerId]);
     }
 
+    /** @return array<string, mixed>|null */
+    public function find(int $id): ?array
+    {
+        return $this->db->fetchOne('SELECT * FROM upstream_keys WHERE id = ?', [$id]);
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function byProvider(int $providerId): array
     {
