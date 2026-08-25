@@ -38,6 +38,36 @@ final class UpstreamKeyRepository
         return (int)$this->db->lastInsertId();
     }
 
+    /** 允许通过 update() 修改的列 */
+    private const UPDATABLE = ['key_value', 'status', 'weight'];
+
+    public function update(int $id, array $data): int
+    {
+        $sets = [];
+        $params = [];
+        foreach (self::UPDATABLE as $col) {
+            if (array_key_exists($col, $data)) {
+                $sets[] = "{$col} = ?";
+                $params[] = $data[$col];
+            }
+        }
+        if ($sets === []) {
+            return 0;
+        }
+        $params[] = $id;
+        return $this->db->execute('UPDATE upstream_keys SET ' . implode(', ', $sets) . ' WHERE id = ?', $params);
+    }
+
+    public function delete(int $id): int
+    {
+        return $this->db->execute('DELETE FROM upstream_keys WHERE id = ?', [$id]);
+    }
+
+    public function deleteByProvider(int $providerId): int
+    {
+        return $this->db->execute('DELETE FROM upstream_keys WHERE provider_id = ?', [$providerId]);
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function byProvider(int $providerId): array
     {
