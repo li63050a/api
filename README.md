@@ -4,6 +4,8 @@
 
 全新重构版：**零第三方依赖**（无 Composer、无 Redis、无需后台进程），命名空间分层 + 依赖注入，后台为纯 SPA 单页。
 
+> 版本更新与历史变更请查看 [CHANGELOG.md](CHANGELOG.md)。
+
 ---
 
 ## 一、功能特性
@@ -126,11 +128,11 @@ curl https://你的域名/路径/index.php/v1/models \
 
 ---
 
-## 七、计费 / 限流 / 配额
+## 七、计费 / 限流 / 配额（均按 API Key）
 
-- **计费**：`BillingService::record()` 记录每次请求的 token 用量写入 `billing` 表（按原语义**不扣余额**，仅记账，供外部计费逻辑消费）。
-- **限流**：`FileRateLimiter` 基于文件锁，按用户 + 路径 + 分钟窗口计数（阈值 `ratelimit_requests_per_minute`）。
-- **配额**：`QuotaService` 按 `users.quota_daily / quota_monthly` 与当日 / 当月累计 token 判定，超限返回 429。
+- **计费**：`BillingService::record()` 记录每次请求的 token 用量与成本写入 `billing` 表，按 `api_key_id` 归集（仅记账，不自动扣减配额，供外部计费逻辑消费）。
+- **限流**：`FileRateLimiter` 基于文件锁，按**密钥 + 路径 + 分钟窗口**计数（阈值 `ratelimit_requests_per_minute`）。
+- **配额**：`QuotaService` 按每个 Key 的 `api_keys.quota_daily / quota_monthly` 与当日 / 当月累计 token 判定，超限（或命中 IP / 模型白名单之外）返回 429 / 403。
 
 ---
 
