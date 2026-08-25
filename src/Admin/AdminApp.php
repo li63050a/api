@@ -20,7 +20,6 @@ final class AdminApp
         $nav = [
             'dashboard' => '仪表盘',
             'keys' => '密钥',
-            'models' => '模型管理',
             'providers' => '供应商',
             'logs' => '日志',
             'billing' => '账单',
@@ -30,9 +29,11 @@ final class AdminApp
             'speedtest' => '测速',
         ];
         $links = '';
+        $icons = views_nav_icons();
         foreach ($nav as $view => $label) {
             $active = $view === 'dashboard' ? ' class="active"' : '';
-            $links .= '<a data-view="' . $view . '"' . $active . '><span>' . $label . '</span></a>';
+            $ico = $icons[$view] ?? '';
+            $links .= '<a data-view="' . $view . '"' . $active . '><span class="ico">' . $ico . '</span><span class="lbl">' . $label . '</span></a>';
         }
 
         // heredoc 仅插值变量，不允许函数调用；先求值后经 {$var} 注入
@@ -55,13 +56,17 @@ final class AdminApp
 {$mustChangeOverlay}
 
 <div class="app hidden" id="appShell">
-  <aside class="sidebar">
-    <div class="brand"><span class="dot"></span>API 中转站</div>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><span class="dot"></span><span class="label">API 中转站</span></div>
     <nav>{$links}</nav>
     <div class="foot">v1.0 · 内联 SPA</div>
   </aside>
+  <div class="sidebar-mask" id="sidebarMask"></div>
   <div class="main">
     <div class="topbar">
+      <button type="button" class="nav-toggle" id="navToggle" aria-label="菜单" title="菜单">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
       <span class="title" id="viewTitle">仪表盘</span>
       <span class="spacer"></span>
       <span class="user">你好，<span id="userName"></span></span>
@@ -72,6 +77,7 @@ final class AdminApp
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="modal-mask" id="modalMask"><div class="modal" id="modalBox"></div></div>
 
 <script>{$appJs}</script>
 </body>
