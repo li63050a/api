@@ -1,7 +1,11 @@
 <?php
-// 测试引导：用临时库与缓存目录隔离，避免污染真实数据
-putenv('AI_API_DB_PATH=' . sys_get_temp_dir() . '/aiapi_test.db');
-putenv('AI_API_CACHE_DIR=' . sys_get_temp_dir() . '/aiapi_cache');
+declare(strict_types=1);
 
-require __DIR__ . '/../vendor/autoload.php';
-require __DIR__ . '/../core.php';
+require dirname(__DIR__) . '/src/bootstrap.php';
+require __DIR__ . '/Framework.php';
+
+// 所有测试在临时目录内运行，避免污染仓库
+define('TESTS_TMP', sys_get_temp_dir() . '/aiapi_tests_' . getmypid());
+if (!is_dir(TESTS_TMP) && !mkdir(TESTS_TMP, 0777, true) && !is_dir(TESTS_TMP)) {
+    throw new RuntimeException('cannot create tests tmp dir');
+}
