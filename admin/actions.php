@@ -139,6 +139,9 @@ switch ($action) {
     case 'users':
     case 'add_user':
     case 'toggle_user':
+    case 'add_admin':
+    case 'reset_admin':
+    case 'delete_admin':
         echo (new AdminUserMgmt())->dispatch(new AppRequest());
         exit;
 
