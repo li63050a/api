@@ -78,6 +78,24 @@ final class UpstreamKeyRepository
         );
     }
 
+    /** 含熔断/停用键的全部上游键，供 KeyPool 冷却恢复判断 */
+    public function allByProvider(int $providerId): array
+    {
+        return $this->db->fetchAll(
+            'SELECT * FROM upstream_keys WHERE provider_id = ? ORDER BY id ASC',
+            [$providerId]
+        );
+    }
+
+    /** 熔断冷却结束后自动恢复 */
+    public function enable(int $id): int
+    {
+        return $this->db->execute(
+            'UPDATE upstream_keys SET status = 1, disabled_at = NULL, consecutive_failures = 0 WHERE id = ?',
+            [$id]
+        );
+    }
+
     public function markFail(int $id): int
     {
         return $this->db->execute(

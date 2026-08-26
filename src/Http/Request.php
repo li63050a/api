@@ -17,8 +17,12 @@ final class Request
         private string $clientIp,
     ) {}
 
-    public static function fromGlobals(): self
+    public static function fromGlobals(?array $config = null): self
     {
+        if ($config === null) {
+            $cfgFile = dirname(__DIR__, 2) . '/config.php';
+            $config = is_file($cfgFile) ? (require $cfgFile) : [];
+        }
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
         $path = (string)parse_url($uri, PHP_URL_PATH);
         // 去掉入口脚本前缀（含子目录部署，如 /api/index.php/v1/... -> /v1/...）
@@ -36,7 +40,6 @@ final class Request
         if (isset($_SERVER['CONTENT_TYPE'])) {
             $headers['content-type'] = (string)$_SERVER['CONTENT_TYPE'];
         }
-        $auth = $headers['authorization'] ?? '';
         $rawBody = file_get_contents('php://input');
         $req = new self(
             (string)($_SERVER['REQUEST_METHOD'] ?? 'GET'),
@@ -44,7 +47,7 @@ final class Request
             $headers,
             $_GET,
             $rawBody === false ? null : $rawBody,
-            (string)($_SERVER['REMOTE_ADDR'] ?? ''),
+            self::resolveClientIp($config),
         );
         // version 取路径首段（如 /v1/chat/completions -> v1）
         $segments = array_values(array_filter(explode('/', $path), static fn (string $s): bool => $s !== ''));
@@ -52,6 +55,25 @@ final class Request
             $req->setAttribute('version', $segments[0]);
         }
         return $req;
+    }
+
+    /** 仅当直连 IP 属于 trusted_proxies 时取 X-Forwarded-For 首个 IP，防止伪造 */
+    private static function resolveClientIp(array $config): string
+    {
+        $remote = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+        if ($remote === '') {
+            return '';
+        }
+        $trusted = array_values(array_filter(array_map('trim', explode(',', (string)($config['trusted_proxies'] ?? ''))), static fn (string $e) => $e !== ''));
+        if ($trusted === [] || !in_array($remote, $trusted, true)) {
+            return $remote;
+        }
+        $fwd = trim((string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''));
+        if ($fwd === '') {
+            return $remote;
+        }
+        $first = trim(explode(',', $fwd)[0]);
+        return $first !== '' ? $first : $remote;
     }
 
     public function method(): string { return $this->method; }

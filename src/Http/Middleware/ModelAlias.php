@@ -47,18 +47,33 @@ final class ModelAlias implements MiddlewareInterface
     /** 将 provider 路由信息并入 model_map，供 AbstractProvider::forward/buildUrl 使用 */
     private function resolveMap(array $map): array
     {
-        $provider = $this->providers->findByName((string)($map['provider'] ?? ''));
-        $family = $provider !== null
-            ? (string)($provider['client_format'] ?? 'openai')
-            : (string)($map['client_format'] ?? 'openai');
+        $providerName = (string)($map['provider'] ?? '');
+        $provider = $this->providers->findByName($providerName);
+        if ($provider === null) {
+            throw new HttpException(
+                '模型映射引用的供应商不存在：' . $providerName
+                . '（请在后台核对模型映射的 provider 与供应商 name 是否完全一致，区分大小写）',
+                503,
+                'provider_not_found'
+            );
+        }
+        $baseUrl = trim((string)($provider['base_url'] ?? ''));
+        if ($baseUrl === '') {
+            throw new HttpException(
+                '供应商 ' . $providerName . ' 未配置 base_url，无法转发请求',
+                503,
+                'provider_misconfigured'
+            );
+        }
+        $family = (string)($provider['client_format'] ?? 'openai');
         if (!in_array($family, self::FAMILIES, true)) {
             $family = 'openai';
         }
         return array_merge($map, [
             'provider' => $family,
-            'provider_id' => $provider === null ? 0 : (int)$provider['id'],
-            'base_url' => $provider === null ? '' : (string)($provider['base_url'] ?? ''),
-            'timeout' => $provider === null ? 0 : (int)($provider['timeout'] ?? 0),
+            'provider_id' => (int)$provider['id'],
+            'base_url' => (string)($provider['base_url'] ?? ''),
+            'timeout' => (int)($provider['timeout'] ?? 0),
         ]);
     }
 }

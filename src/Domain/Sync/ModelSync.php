@@ -138,11 +138,14 @@ final class ModelSync
     private function httpGet(string $url, array $headers = []): array
     {
         $ch = curl_init($url);
+        $sslVerify = (bool)$this->config->get('upstream_ssl_verify', true);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_TIMEOUT => (int)$this->config->get('upstream_timeout', 30),
             CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => $sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $sslVerify ? 2 : 0,
         ]);
         $body = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);

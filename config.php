@@ -16,6 +16,7 @@ return [
     // 上游调用
     'upstream_timeout'      => 120,
     'upstream_retry'        => 2,
+    'upstream_ssl_verify'   => true,   // 上游 HTTPS 证书校验（虚拟主机 CA 包过旧导致 curl errno 60/77 时可置 false，但存在中间人风险）
     'provider_max_retries'  => 1,     // 每个上游 Key 的重试次数（0=不重试）
 
     // 下游客户端接口格式（多模式）

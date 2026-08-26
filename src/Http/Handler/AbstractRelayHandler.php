@@ -37,6 +37,9 @@ abstract class AbstractRelayHandler
         $clientFormat = (string)$request->attribute('client_format', 'openai');
         $payload = $request->json();
         $key = $auth['key'];
+        if (is_array($map)) {
+            $map['preferred_key_id'] = (int)$request->attribute('preferred_key_id', 0);
+        }
 
         $this->assertModelAllowed($key, $map);
         $this->quota->assertWithinQuota($key, 'daily');
@@ -76,7 +79,7 @@ abstract class AbstractRelayHandler
                 'model' => (string)$map['alias'],
                 'endpoint' => $this->endpoint(),
                 'client_format' => $clientFormat,
-                'status' => 0,
+                'status' => $e->status(),
                 'error' => $e->getMessage(),
                 'latency_ms' => (int)((microtime(true) - $start) * 1000),
                 'ip' => $request->clientIp(),
@@ -99,7 +102,7 @@ abstract class AbstractRelayHandler
             'model' => (string)$map['alias'],
             'endpoint' => $this->endpoint(),
             'client_format' => $clientFormat,
-            'status' => 1,
+            'status' => 200,
             'prompt_tokens' => is_array($usage) ? (int)($usage['prompt_tokens'] ?? 0) : 0,
             'completion_tokens' => is_array($usage) ? (int)($usage['completion_tokens'] ?? 0) : 0,
             'total_tokens' => is_array($usage) ? (int)($usage['total_tokens'] ?? 0) : 0,

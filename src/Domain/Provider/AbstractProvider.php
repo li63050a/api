@@ -38,7 +38,7 @@ abstract class AbstractProvider implements ProviderInterface
         $lastError = '';
 
         for ($i = 0; $i < $attempts; $i++) {
-            $upstream = $this->pool->pick((int)$model['provider_id']);
+            $upstream = $this->pool->pick((int)$model['provider_id'], (int)($model['preferred_key_id'] ?? 0));
             if ($upstream === null) {
                 $ctx = 'provider=' . (string)($model['provider'] ?? '')
                     . ', provider_id=' . (int)($model['provider_id'] ?? 0)
@@ -126,8 +126,9 @@ abstract class AbstractProvider implements ProviderInterface
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, min(10, $timeout));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, $onChunk === null);
         curl_setopt($ch, CURLOPT_HEADER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+        $sslVerify = (bool)$this->config->get('upstream_ssl_verify', true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $sslVerify);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $sslVerify ? 2 : 0);
         if ($onChunk !== null) {
             curl_setopt($ch, CURLOPT_WRITEFUNCTION, static function ($ch, $data) use ($onChunk): int {
                 $onChunk($data);
@@ -167,15 +168,18 @@ abstract class AbstractProvider implements ProviderInterface
 
     protected function decryptUpstreamKey(string $stored): string
     {
-        $raw = base64_decode($stored, true);
-        if ($raw !== false && str_starts_with($raw, 'enc:')) {
-            try {
-                return $this->crypto->decrypt(substr($raw, 4));
-            } catch (\Throwable) {
-                // 解密失败按明文原样返回，交由上游调用报错
-                return $stored;
-            }
+        if (!str_starts_with($stored, 'enc:')) {
+            return $stored;
         }
-        return $stored;
+        try {
+            return $this->crypto->decrypt(substr($stored, 4));
+        } catch (\Throwable $e) {
+            throw new HttpException(
+                '上游密钥解密失败：' . $e->getMessage()
+                . '（config.php 的 crypto_key 可能已被更改，与已存储的密钥不匹配）',
+                503,
+                'upstream_key_decrypt_failed'
+            );
+        }
     }
 }

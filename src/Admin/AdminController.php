@@ -60,6 +60,7 @@ final class AdminController
     public function dispatch(Request $request): Response
     {
         try {
+            $this->assertSameOrigin($request);
             $body = $request->json();
             $action = (string)($body['action'] ?? $request->query('action', ''));
             if ($action === '') {
@@ -433,6 +434,13 @@ final class AdminController
         if ($alias === '' || $provider === '') {
             throw new HttpException('alias 与 provider 必填', 422, 'invalid_request');
         }
+        if ($this->providers->findByName($provider) === null) {
+            throw new HttpException(
+                'provider 不存在：' . $provider . '（须与供应商列表中的 name 完全一致，区分大小写）',
+                422,
+                'invalid_request'
+            );
+        }
         $data = [
             'alias' => $alias,
             'provider' => $provider,
@@ -610,6 +618,34 @@ final class AdminController
     }
 
     /* ---------- 内部辅助 ---------- */
+
+    /**
+     * CSRF 防护：后台仅接受同源请求（校验 Origin/Referer 的 host）。
+     * 跨站 no-cors fetch 发送 text/plain JSON 时无法通过预检但会携带会话 Cookie，
+     * 若不校验可被恶意页面改写管理员凭据/删除数据。
+     */
+    private function assertSameOrigin(Request $r): void
+    {
+        $host = (string)parse_url('http://' . ($_SERVER['HTTP_HOST'] ?? ''), PHP_URL_HOST);
+        if ($host === '') {
+            return; // CLI / 无法判定 Host 时放行
+        }
+        $origin = $r->header('Origin');
+        if ($origin !== null && $origin !== '' && $origin !== 'null') {
+            $o = parse_url($origin, PHP_URL_HOST);
+            if ($o !== null && $o !== $host) {
+                throw new HttpException('cross-origin request rejected', 403, 'csrf_rejected');
+            }
+            return;
+        }
+        $ref = $r->header('Referer');
+        if ($ref !== null && $ref !== '') {
+            $rHost = parse_url($ref, PHP_URL_HOST);
+            if ($rHost !== null && $rHost !== $host) {
+                throw new HttpException('cross-origin request rejected', 403, 'csrf_rejected');
+            }
+        }
+    }
 
     /** @param array<string, mixed> $detail */
     private function auditLog(Request $r, string $action, array $detail): void

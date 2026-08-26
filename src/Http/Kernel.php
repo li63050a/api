@@ -44,7 +44,7 @@ final class Kernel
             return Response::error($e);
         } catch (\Throwable $e) {
             $this->logger->record([
-                'status' => 0,
+                'status' => 500,
                 'error' => $e->getMessage(),
                 'ip' => $request->clientIp(),
             ]);
