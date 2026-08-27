@@ -42,6 +42,18 @@ final class SpeedTestService
         return $results;
     }
 
+    /** 按供应商一键测速：仅探测该供应商的模型；autoDisable 时失败自动禁用。 */
+    public function testProviderModels(string $providerName, bool $autoDisable = false): array
+    {
+        $results = [];
+        foreach ($this->modelMap->all() as $model) {
+            if ((string)($model['provider'] ?? '') === $providerName) {
+                $results[] = $this->testModel($model, $autoDisable);
+            }
+        }
+        return $results;
+    }
+
     /**
      * 指定模型测速：按 model_map 行解析供应商与上游 Key，发一次最小请求。
      *

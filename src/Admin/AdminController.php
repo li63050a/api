@@ -471,10 +471,11 @@ final class AdminController
     private function actModelmapSync(Request $r, array $b): array
     {
         $pid = (int)($b['provider_id'] ?? 0);
+        $autoDisable = (int)($b['auto_disable'] ?? 0) === 1;
         $results = $pid > 0
-            ? [$this->modelSync()->syncProvider($pid)]
-            : $this->modelSync()->syncAll();
-        $this->auditLog($r, 'modelmap.sync', ['provider_id' => $pid]);
+            ? [$this->modelSync()->syncProvider($pid, $autoDisable)]
+            : $this->modelSync()->syncAll($autoDisable);
+        $this->auditLog($r, 'modelmap.sync', ['provider_id' => $pid, 'auto_disable' => $autoDisable]);
         return ['results' => $results];
     }
 
@@ -596,6 +597,19 @@ final class AdminController
         $result = $this->speedTest()->testModel($model, $autoDisable);
         $this->auditLog($r, 'speedtest.model', ['model_id' => $id, 'alias' => (string)$model['alias'], 'auto_disable' => $autoDisable]);
         return ['result' => $result];
+    }
+
+    /** 按供应商一键测速：对该供应商全部模型做探测；auto_disable=1 时失败自动禁用。 */
+    private function actSpeedtestProvider(Request $r, array $b): array
+    {
+        $name = trim((string)($b['provider'] ?? ''));
+        if ($name === '') {
+            throw new HttpException('provider 必填', 422, 'invalid_request');
+        }
+        $autoDisable = (int)($b['auto_disable'] ?? 0) === 1;
+        $results = $this->speedTest()->testProviderModels($name, $autoDisable);
+        $this->auditLog($r, 'speedtest.provider', ['provider' => $name, 'count' => count($results), 'auto_disable' => $autoDisable]);
+        return ['results' => $results];
     }
 
     private function actSystemResetAdmin(Request $r, array $b): array

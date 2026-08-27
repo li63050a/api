@@ -29,8 +29,8 @@ final class ModelSync
         private Config $config,
     ) {}
 
-    /** @return array{id:int, name:string, ok:bool, count:int, note:string, error:string} */
-    public function syncProvider(int $providerId): array
+    /** @return array{id:int, name:string, ok:bool, count:int, note:string, error:string, tested?:int, failed?:int, disabled?:int, details?:array<int,array<string,mixed>>} */
+    public function syncProvider(int $providerId, bool $autoDisable = false): array
     {
         $provider = $this->providers->find($providerId);
         if ($provider === null) {
@@ -88,6 +88,10 @@ final class ModelSync
         }
 
         $count = 0;
+        $tested = 0;
+        $failed = 0;
+        $disabled = 0;
+        $details = [];
         foreach ($fetched as $id) {
             if ($this->modelMap->findByAlias($id) !== null) {
                 continue; // 已存在则跳过，避免覆盖手动维护的配置
@@ -97,27 +101,50 @@ final class ModelSync
                 'provider' => $name,
                 'upstream_model' => $id,
                 'client_format' => $fmt,
-                'enabled' => 0, // 自动同步默认停用，由管理员启用
+                'enabled' => 1, // 同步默认全部启用，由管理员或自动检测停用
             ]);
             $count++;
+            if ($autoDisable) {
+                $tested++;
+                $probe = $this->probeModelHttp($baseUrl, $fmt, $rawKey, $id);
+                if (!$probe['ok']) {
+                    $failed++;
+                    $row = $this->modelMap->findByAlias($id);
+                    if ($row !== null) {
+                        $this->modelMap->update((int)$row['id'], ['enabled' => 0]);
+                        $disabled++;
+                    }
+                    $details[] = ['model' => $id, 'ok' => false, 'latency_ms' => $probe['latency_ms'], 'error' => $probe['error']];
+                } else {
+                    $details[] = ['model' => $id, 'ok' => true, 'latency_ms' => $probe['latency_ms'], 'error' => ''];
+                }
+            }
         }
 
+        $note = $count > 0 ? "同步 {$count} 个模型" : '无新增（已存在）';
+        if ($autoDisable) {
+            $note .= "，检测 {$tested} 个，不可用 {$disabled} 个已自动禁用";
+        }
         return [
             'id' => $providerId,
             'name' => $name,
             'ok' => true,
             'count' => $count,
-            'note' => $count > 0 ? "同步 {$count} 个模型" : '无新增（已存在）',
+            'note' => $note,
             'error' => '',
+            'tested' => $tested,
+            'failed' => $failed,
+            'disabled' => $disabled,
+            'details' => $details,
         ];
     }
 
     /** @return array<int, array{id:int, name:string, ok:bool, count:int, note:string, error:string}> */
-    public function syncAll(): array
+    public function syncAll(bool $autoDisable = false): array
     {
         $results = [];
         foreach ($this->providers->all() as $provider) {
-            $results[] = $this->syncProvider((int)$provider['id']);
+            $results[] = $this->syncProvider((int)$provider['id'], $autoDisable);
         }
         return $results;
     }
@@ -132,6 +159,52 @@ final class ModelSync
             }
         }
         return $stored;
+    }
+
+    /** 同步时检测单个模型是否可用；返回 {ok, code, latency_ms, error} */
+    private function probeModelHttp(string $baseUrl, string $fmt, string $rawKey, string $upstreamModel): array
+    {
+        $sslVerify = (bool)$this->config->get('upstream_ssl_verify', true);
+        if ($fmt === 'anthropic') {
+            $url = $baseUrl . '/v1/messages';
+            $headers = ['x-api-key: ' . $rawKey, 'anthropic-version: 2023-06-01', 'content-type: application/json'];
+            $body = ['model' => $upstreamModel, 'max_tokens' => 1, 'messages' => [['role' => 'user', 'content' => 'hi']]];
+        } elseif ($fmt === 'gemini') {
+            $url = $baseUrl . '/v1beta/models/' . urlencode($upstreamModel) . ':generateContent?key=' . urlencode($rawKey);
+            $headers = ['content-type: application/json'];
+            $body = ['contents' => [['parts' => [['text' => 'hi']]]]];
+        } else {
+            $url = $baseUrl . '/v1/chat/completions';
+            $headers = ['content-type: application/json', 'Authorization: Bearer ' . $rawKey];
+            $body = ['model' => $upstreamModel, 'max_tokens' => 1, 'messages' => [['role' => 'user', 'content' => 'hi']]];
+        }
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_POSTFIELDS => json_encode($body),
+            CURLOPT_TIMEOUT => (int)$this->config->get('upstream_timeout', 30),
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => $sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $sslVerify ? 2 : 0,
+        ]);
+        $start = microtime(true);
+        $result = curl_exec($ch);
+        $latency = (int)round((microtime(true) - $start) * 1000);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        if ($result === false) {
+            return ['ok' => false, 'code' => 0, 'latency_ms' => $latency, 'error' => 'curl error: ' . $err];
+        }
+        $ok = $code >= 200 && $code < 300;
+        return [
+            'ok' => $ok,
+            'code' => $code,
+            'latency_ms' => $latency,
+            'error' => $ok ? '' : mb_substr((string)$result, 0, 300),
+        ];
     }
 
     /** @return array{ok:bool, detail:string, body:string} */
