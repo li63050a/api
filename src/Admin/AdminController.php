@@ -10,6 +10,7 @@ use App\Db\Repository\ApiKeyRepository;
 use App\Db\Repository\ModelMapRepository;
 use App\Db\Repository\ProviderRepository;
 use App\Db\Repository\RequestLogRepository;
+use App\Db\Repository\SettingRepository;
 use App\Db\Repository\SpeedTestRepository;
 use App\Db\Repository\UpstreamKeyRepository;
 use App\Db\Repository\UserRepository;
@@ -40,6 +41,7 @@ final class AdminController
     private UpstreamKeyRepository $upstreamKeys;
     private RequestLogRepository $logs;
     private SpeedTestRepository $speedTests;
+    private SettingRepository $settings;
 
     public function __construct(
         private AdminAuth $auth,
@@ -55,6 +57,7 @@ final class AdminController
         $this->upstreamKeys = new UpstreamKeyRepository($db);
         $this->logs = new RequestLogRepository($db);
         $this->speedTests = new SpeedTestRepository($db);
+        $this->settings = new SettingRepository($db);
     }
 
     public function dispatch(Request $request): Response
@@ -572,6 +575,80 @@ final class AdminController
             [$since]
         );
         return ['daily' => $daily, 'totals' => $this->logs->metrics($since)];
+    }
+
+    /* ---------- 模型价格 / 自动检测（顶栏模型条） ---------- */
+
+    /** 全部模型 + 价格 + 最近测速可用性 + 自动检测设置 */
+    private function actModelsList(Request $r, array $b): array
+    {
+        $pidByName = [];
+        foreach ($this->providers->all() as $p) {
+            $pidByName[(string)$p['name']] = (int)$p['id'];
+        }
+        $items = [];
+        foreach ($this->modelMap->all() as $m) {
+            $last = $this->speedTests->latestForModel($pidByName[(string)($m['provider'] ?? '')] ?? 0, (string)($m['upstream_model'] ?? ''));
+            $items[] = [
+                'id' => (int)$m['id'],
+                'alias' => (string)$m['alias'],
+                'provider' => (string)$m['provider'],
+                'upstream_model' => (string)$m['upstream_model'],
+                'client_format' => (string)$m['client_format'],
+                'enabled' => (int)$m['enabled'],
+                'prompt_price' => (float)($m['prompt_price'] ?? 0),
+                'completion_price' => (float)($m['completion_price'] ?? 0),
+                'last_latency' => $last === null ? null : (int)$last['latency_ms'],
+                'last_success' => $last === null ? null : (int)$last['success'],
+                'last_tested_at' => $last === null ? null : (int)$last['created_at'],
+            ];
+        }
+        return [
+            'items' => $items,
+            'settings' => [
+                'auto_detect_enabled' => (int)$this->settings->get('auto_detect_enabled', 0),
+                'auto_detect_interval' => (int)$this->settings->get('auto_detect_interval', 30),
+                'auto_detect_auto_disable' => (int)$this->settings->get('auto_detect_auto_disable', 1),
+                'auto_detect_last_run' => (int)$this->settings->get('auto_detect_last_run', 0),
+            ],
+        ];
+    }
+
+    /** 保存单个模型价格（每百万 token 美元） */
+    private function actModelsPriceSave(Request $r, array $b): array
+    {
+        $id = (int)($b['id'] ?? 0);
+        if ($id <= 0) {
+            throw new HttpException('invalid id', 422, 'invalid_request');
+        }
+        $prompt = max(0.0, (float)($b['prompt_price'] ?? 0));
+        $completion = max(0.0, (float)($b['completion_price'] ?? 0));
+        $this->modelMap->update($id, ['prompt_price' => $prompt, 'completion_price' => $completion]);
+        $this->auditLog($r, 'model.price.save', ['id' => $id, 'prompt_price' => $prompt, 'completion_price' => $completion]);
+        return ['id' => $id];
+    }
+
+    /** 保存自动检测设置（间隔分钟 / 失败自动禁用） */
+    private function actDetectSettings(Request $r, array $b): array
+    {
+        $enabled = (int)($b['auto_detect_enabled'] ?? 0) === 1;
+        $interval = max(1, (int)($b['auto_detect_interval'] ?? 30));
+        $autoDisable = (int)($b['auto_detect_auto_disable'] ?? 1) === 1;
+        $this->settings->set('auto_detect_enabled', $enabled ? '1' : '0');
+        $this->settings->set('auto_detect_interval', (string)$interval);
+        $this->settings->set('auto_detect_auto_disable', $autoDisable ? '1' : '0');
+        $this->auditLog($r, 'detect.settings', ['enabled' => $enabled, 'interval' => $interval, 'auto_disable' => $autoDisable]);
+        return ['saved' => true];
+    }
+
+    /** 立即执行一次全模型可用度检测 */
+    private function actDetectRun(Request $r, array $b): array
+    {
+        $autoDisable = (int)($b['auto_disable'] ?? (int)$this->settings->get('auto_detect_auto_disable', 1)) === 1;
+        $results = $this->speedTest()->testAllModels($autoDisable);
+        $this->settings->set('auto_detect_last_run', (string)time());
+        $this->auditLog($r, 'detect.run', ['count' => count($results), 'auto_disable' => $autoDisable]);
+        return ['results' => $results];
     }
 
     /* ---------- 模型级测速 / 系统 ---------- */

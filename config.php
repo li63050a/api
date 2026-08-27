@@ -23,6 +23,9 @@ return [
     'client_formats'          => ['openai', 'anthropic', 'gemini'],
     'default_client_format'   => 'openai',
 
+    // 路由模型：all 别名（全部中最快）
+    'route_all_alias'         => 'all',
+
     // 网关限流（RateLimit 中间件）
     'ratelimit_requests_per_minute' => 60,
 

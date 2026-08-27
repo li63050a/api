@@ -8,13 +8,14 @@ use App\Db\Database;
 final class UserRepository
 {
     /** 允许通过 update() 修改的列 */
-    private const UPDATABLE = ['username', 'status', 'balance', 'quota_daily', 'quota_monthly'];
+    private const UPDATABLE = ['username', 'password_hash', 'status', 'balance', 'quota_daily', 'quota_monthly'];
 
     public function __construct(private Database $db) {}
 
     public function create(array $data): int
     {
         $data += [
+            'password_hash' => '',
             'status' => 1,
             'balance' => 0,
             'quota_daily' => 0,
@@ -23,10 +24,11 @@ final class UserRepository
             'updated_at' => time(),
         ];
         $this->db->execute(
-            'INSERT INTO users (username, status, balance, quota_daily, quota_monthly, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO users (username, password_hash, status, balance, quota_daily, quota_monthly, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $data['username'],
+                $data['password_hash'],
                 $data['status'],
                 $data['balance'],
                 $data['quota_daily'],
@@ -41,6 +43,11 @@ final class UserRepository
     public function find(int $id): ?array
     {
         return $this->db->fetchOne('SELECT * FROM users WHERE id = ?', [$id]);
+    }
+
+    public function findByUsername(string $username): ?array
+    {
+        return $this->db->fetchOne('SELECT * FROM users WHERE username = ?', [$username]);
     }
 
     /** @return array<int, array<string, mixed>> */

@@ -9,9 +9,10 @@ final class BillingService
 {
     public function __construct(private BillingRepository $billing) {}
 
-    public function record(array $key, string $provider, string $model, int $prompt, int $completion): void
+    public function record(array $key, string $provider, string $model, int $prompt, int $completion, float $promptPrice = 0.0, float $completionPrice = 0.0): void
     {
         $total = $prompt + $completion;
+        $cost = ($prompt / 1000000 * $promptPrice) + ($completion / 1000000 * $completionPrice);
         $this->billing->insert([
             'user_id' => (int)($key['user_id'] ?? 0),
             'api_key_id' => (int)$key['id'],
@@ -20,7 +21,7 @@ final class BillingService
             'prompt_tokens' => $prompt,
             'completion_tokens' => $completion,
             'total_tokens' => $total,
-            'cost' => 0.0,
+            'cost' => round($cost, 8),
             'status' => 1,
             'created_at' => time(),
         ]);

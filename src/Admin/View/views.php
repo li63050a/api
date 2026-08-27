@@ -141,6 +141,16 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 6px; font-fa
 .pill.warn { background: var(--warn-bg); color: var(--warn); }
 .toolbar { display: flex; gap: 10px; align-items: center; margin: 4px 0 14px; flex-wrap: wrap; }
 .hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+
+/* 顶栏模型条 */
+.modelbar { background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 24px; }
+.mbar-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.mbar-tools input, .mbar-tools select { padding: 6px 8px; }
+.mbar-list { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.mbar-item { display: inline-flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+.mbar-item b { color: var(--ink); }
+.mbar-item .muted { font-size: 11px; }
 .spinner { width: 15px; height: 15px; border: 2px solid var(--line); border-top-color: var(--brand); border-radius: 50%;
   display: inline-block; animation: spin .7s linear infinite; vertical-align: -3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -909,11 +919,88 @@ function views_app_js(): string
         c.innerHTML = render(v, j.data);
         bindForms(c);
         bindButtons(c);
+        renderModelBar();
       } else {
         toast((j.error && j.error.message) || '加载失败', true);
         if (j.error && j.error.type === 'unauthorized') { location.reload(); }
       }
     });
+  }
+
+  /* 顶栏模型条：全部模型 + 价格 + 可用性 + 自动检测设置 */
+  function renderModelBar() {
+    var bar = document.getElementById('modelBar');
+    if (!bar) { return; }
+    api('models.list', {}).then(function (j) {
+      if (!j.ok) { return; }
+      var d = j.data;
+      var s = d.settings || {};
+      var h = '<div class="mbar-tools">'
+        + '<b style="color:var(--ink)">模型</b>'
+        + '<label style="display:inline-flex;align-items:center;gap:5px;margin:0"><input type="checkbox" id="adEnabled" style="width:auto"' + (s.auto_detect_enabled == 1 ? ' checked' : '') + '> 自动检测</label>'
+        + '<label style="display:inline-flex;align-items:center;gap:5px;margin:0">间隔 <input type="number" id="adInterval" min="1" value="' + (s.auto_detect_interval || 30) + '" style="width:64px"> 分钟</label>'
+        + '<label style="display:inline-flex;align-items:center;gap:5px;margin:0"><input type="checkbox" id="adAutoDisable" style="width:auto"' + (s.auto_detect_auto_disable == 1 ? ' checked' : '') + '> 失败自动禁用</label>'
+        + '<button type="button" class="ghost" id="adRun">立即检测</button>'
+        + '<button type="button" class="ghost" id="adSave">保存设置</button>'
+        + '<span class="muted">上次检测：' + (s.auto_detect_last_run ? fmtTime(s.auto_detect_last_run) : '从未') + '（开启后访问后台自动触发，无需 cron）</span>'
+        + '</div>';
+      h += '<div class="mbar-list">';
+      var items = d.items || [];
+      if (!items.length) { h += '<span class="muted">暂无模型</span>'; }
+      items.forEach(function (m) {
+        var avail = m.last_success == null ? '<span class="muted">未测</span>'
+          : (m.last_success == 1 ? '<span class="pill on">可用</span>' : '<span class="pill off">不可用</span>');
+        var lat = m.last_latency != null ? m.last_latency + 'ms' : '-';
+        h += '<span class="mbar-item" title="' + esc(m.provider + '/' + m.upstream_model) + '">'
+          + '<b>' + esc(m.alias) + '</b>'
+          + '<span class="muted">' + esc(m.provider) + '</span>'
+          + '<span class="mono">$' + (+m.prompt_price).toFixed(4) + ' / $' + (+m.completion_price).toFixed(4) + '</span>'
+          + pillStatus(m.enabled) + avail + '<span class="muted">' + lat + '</span>'
+          + '<button type="button" class="ghost" data-price="' + m.id + '" data-alias="' + esc(m.alias) + '" data-pp="' + m.prompt_price + '" data-cp="' + m.completion_price + '" style="padding:3px 8px;font-size:11px">价格</button>'
+          + '</span>';
+      });
+      h += '</div>';
+      bar.innerHTML = h;
+
+      var run = document.getElementById('adRun');
+      if (run) { run.addEventListener('click', function () {
+        var auto = document.getElementById('adAutoDisable').checked ? 1 : 0;
+        api('detect.run', { auto_disable: auto }).then(function (j) {
+          if (j.ok) { toast('检测完成'); renderModelBar(); loadView(current); }
+          else { toast((j.error && j.error.message) || '检测失败', true); }
+        });
+      }); }
+      var save = document.getElementById('adSave');
+      if (save) { save.addEventListener('click', function () {
+        api('detect.settings', {
+          auto_detect_enabled: document.getElementById('adEnabled').checked ? 1 : 0,
+          auto_detect_interval: document.getElementById('adInterval').value,
+          auto_detect_auto_disable: document.getElementById('adAutoDisable').checked ? 1 : 0
+        }).then(function (j) {
+          if (j.ok) { toast('已保存'); renderModelBar(); }
+          else { toast((j.error && j.error.message) || '保存失败', true); }
+        });
+      }); }
+      bar.querySelectorAll('[data-price]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          priceModal(b.getAttribute('data-alias'), b.getAttribute('data-price'), b.getAttribute('data-pp'), b.getAttribute('data-cp'));
+        });
+      });
+    });
+  }
+
+  function priceModal(alias, id, pp, cp) {
+    openModal('设置价格 · ' + alias,
+      '<input type="hidden" name="id" value="' + id + '">'
+      + '<div><label>输入价格（$ / 百万 token）</label><input type="number" name="prompt_price" step="0.0001" min="0" value="' + esc(pp) + '"></div>'
+      + '<div><label>输出价格（$ / 百万 token）</label><input type="number" name="completion_price" step="0.0001" min="0" value="' + esc(cp) + '"></div>'
+      + '<div class="full"><p class="hint" style="margin:0">计费 cost = 输入tokens/1e6×输入价 + 输出tokens/1e6×输出价。</p></div>',
+      function (body) {
+        api('models.price.save', body).then(function (j) {
+          if (j.ok) { toast('已保存'); renderModelBar(); loadView(current); }
+          else { toast((j.error && j.error.message) || '保存失败', true); }
+        });
+      });
   }
 
   function bindForms(root) {

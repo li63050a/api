@@ -94,6 +94,8 @@ abstract class AbstractRelayHandler
             (string)$map['alias'],
             is_array($usage) ? (int)($usage['prompt_tokens'] ?? 0) : 0,
             is_array($usage) ? (int)($usage['completion_tokens'] ?? 0) : 0,
+            (float)($map['prompt_price'] ?? 0),
+            (float)($map['completion_price'] ?? 0),
         );
         $this->logger->record([
             'user_id' => (int)($key['user_id'] ?? 0),

@@ -11,6 +11,7 @@ use App\Db\Repository\BillingRepository;
 use App\Db\Repository\ModelMapRepository;
 use App\Db\Repository\ProviderRepository;
 use App\Db\Repository\RequestLogRepository;
+use App\Db\Repository\SettingRepository;
 use App\Db\Repository\SpeedTestRepository;
 use App\Db\Repository\UpstreamKeyRepository;
 use App\Db\Repository\UserRepository;
@@ -82,6 +83,7 @@ final class Bootstrap
         $container->set(AdminUserRepository::class, new AdminUserRepository($db));
         $container->set(AdminAuditRepository::class, new AdminAuditRepository($db));
         $container->set(SpeedTestRepository::class, new SpeedTestRepository($db));
+        $container->set(SettingRepository::class, new SettingRepository($db));
 
         // 基础设施
         $cryptoKey = (string)$config->get('crypto_key', '0123456789abcdef0123456789abcdef');
@@ -146,6 +148,8 @@ final class Bootstrap
         $c->set('middleware:model_alias', new ModelAlias(
             $c->get(ModelMapRepository::class),
             $c->get(ProviderRepository::class),
+            $c->get(SpeedTestRepository::class),
+            $c->get(Config::class),
         ));
 
         // Handler（均可直接 __invoke）
@@ -157,7 +161,11 @@ final class Bootstrap
         ];
         $c->set('handler:chat', new ChatHandler(...$relayArgs));
         $c->set('handler:embed', new EmbedHandler(...$relayArgs));
-        $c->set('handler:models', new ModelListHandler($c->get(ModelMapRepository::class)));
+        $c->set('handler:models', new ModelListHandler(
+            $c->get(ModelMapRepository::class),
+            $c->get(ProviderRepository::class),
+            $c->get(Config::class),
+        ));
 
         // 路由
         $router = new Router();

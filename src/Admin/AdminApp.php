@@ -70,6 +70,7 @@ final class AdminApp
       <span class="user">你好，<span id="userName"></span></span>
       <button id="logoutBtn">退出</button>
     </div>
+    <div class="modelbar" id="modelBar"></div>
     <div class="content" id="content"></div>
   </div>
 </div>

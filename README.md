@@ -11,12 +11,15 @@
 ## 一、功能特性
 
 - **多供应商统一路由**：按请求里的 `model` 别名映射到对应供应商（OpenAI / Anthropic / Gemini，或任意 **OpenAI 兼容三方**如 DeepSeek / GLM / Qwen），上游 Key 支持多 Key 池 + 故障熔断 + 自动重试。
-- **单管理员 / 无下游多用户**：后台仅一个管理员账号（默认 `admin666`），不再维护下游用户体系；API Key 独立存在，是唯一的调用与计费凭据。
+- **路由模型（仿 new-api）**：支持 `provider/model` 精确路由（无需 model_map 行）、`all` 全部中最快、`{provider}` 或 `{provider}/*` 单供应商最快；最快按近期测速延迟排序。
+- **单管理员 + 用户注册**：后台单管理员（默认 `admin666`，首登强制改密）；`/user/index.php` 提供用户注册/登录，注册带人机验证（数学验证码），用户可自助生成/管理自己的 API Key。
+- **模型价格与计费**：每个模型可设 输入/输出 单价（$/百万 token），计费 cost = 输入tokens/1e6×输入价 + 输出tokens/1e6×输出价。
+- **自动检测模型可用度**：后台顶栏模型条一键开启，设置间隔分钟；虚拟主机无 cron 时访问后台自动按间隔触发（也提供 `scripts/auto_detect.php` 供 cron 主机使用）；失败可自动禁用。
 - **多格式对外接口**：调用方可直接以 OpenAI 兼容格式，或 Anthropic / Gemini 客户端格式请求（通过 `X-Client-Format` 头切换）；内部以 OpenAI 为规范格式，供应商差异在适配器内消化。每个模型/供应商可指定自身接口格式。
 - **流式 & 非流式**：聊天补全支持 SSE 流式透传；流式开始后不可重试，避免重复输出。
 - **鉴权 / 限流 / 配额 / 权限（按 Key）**：API Key（sha256 索引 O(1) 定位 + bcrypt 校验）；文件锁 best-effort 限流；**每个 Key 可单独设置日 / 月 token 配额、IP 白名单、可用模型白名单**。
 - **首登强制改密**：默认管理员 `admin666` / `admin666`，首次登录强制修改用户名与密码（`must_change=1`）。
-- **管理后台（纯 SPA）**：仪表盘、密钥、模型映射、供应商、模型**一键同步**、**一键测速**、请求日志、账单、审计。
+- **管理后台（纯 SPA）**：供应商方块卡片（可直接填密钥、加第二把密钥）、模型手动/云端同步、模型行级测速、顶栏模型条（价格 + 可用性 + 自动检测）、密钥、请求日志、账单、审计。
 - **请求日志与指标**：按次记录请求，支持保留天数清理；近 7 日请求 / token 指标。
 
 ---
@@ -126,6 +129,34 @@ curl https://你的域名/路径/index.php/v1/models \
   -H "Authorization: Bearer sk-你的Key"
 ```
 
+模型列表包含 model_map 别名、`provider/upstream_model` 形式、`all`（全部最快）与各供应商名/`provider/*`（单供应商最快）等路由模型。
+
+### 5. 路由模型（最快路由）
+
+```bash
+# 精确路由到 openai 的 gpt-4o（无需 model_map 行，供应商存在即可）
+curl https://你的域名/路径/index.php/v1/chat/completions \
+  -H "Authorization: Bearer sk-你的Key" -H "Content-Type: application/json" \
+  -d '{"model":"openai/gpt-4o","messages":[{"role":"user","content":"hi"}]}'
+
+# 全部启用模型中最快
+curl ... -d '{"model":"all","messages":[...]}'
+
+# openai 供应商中最快
+curl ... -d '{"model":"openai","messages":[...]}'
+curl ... -d '{"model":"openai/*","messages":[...]}'
+```
+
+最快路由按近期成功测速的延迟排序；无测速数据时按模型 id 升序。`all` 别名可用 config 的 `route_all_alias` 修改。
+
+### 6. 用户注册 / 人机验证
+
+`/user/index.php` 提供用户注册（含数学验证码人机验证）、登录与自助管理 API Key。注册的用户凭自己的 Key 调用 `/index.php/v1/...`，计费按 `user_id` 归集。
+
+### 7. 自动检测模型可用度（虚拟主机无需 cron）
+
+后台顶栏模型条：开启「自动检测」并设置间隔分钟即可。开启后**访问后台时按间隔自动触发**全量检测（无需任何定时任务）；失败可自动禁用。支持 cron 的主机可改用 `scripts/auto_detect.php`（`* * * * * php scripts/auto_detect.php`）。
+
 ---
 
 ## 七、计费 / 限流 / 配额（均按 API Key）
@@ -140,22 +171,26 @@ curl https://你的域名/路径/index.php/v1/models \
 
 ```
 index.php                    入口（API 薄壳）
-admin/index.php              后台入口（SPA 壳 + AJAX 分派）
+admin/index.php              后台入口（SPA 壳 + AJAX 分派 + 无 cron 自动检测触发）
+user/index.php               用户中心（注册/登录/人机验证 + 自助管理 API Key）
 config.php                   配置（返回数组）
+deploy/nginx-site.conf       nginx 站点配置示例
 scripts/reset_admin.php      重置默认管理员
+scripts/auto_detect.php      自动检测模型可用度（cron 可选）
 src/
 ├── bootstrap.php            PSR-4 风格 autoloader + Bootstrap 容器/内核装配
 ├── Container.php            极简依赖容器
 ├── Http/                    Request/Response/Router/Kernel/中间件/Handler
 │   ├── Handler/             AbstractRelayHandler / Chat / Embed / ModelList
-│   └── Middleware/          ClientFormat / Auth / RateLimit / ModelAlias
+│   └── Middleware/          ClientFormat / Auth / RateLimit / ModelAlias(含路由模型)
 ├── Db/                      Database(PDO) / Schema(建表+种子) / Repository/*
 ├── Domain/
-│   ├── Auth/                ApiKeyAuth(O(1)) / AdminAuth(会话+强制改密)
+│   ├── Auth/                ApiKeyAuth(O(1)) / AdminAuth(会话+强制改密) / UserAuth(注册+验证码)
 │   ├── Provider/            Formatter / AbstractProvider / 三家 Provider / KeyPool / Factory
-│   ├── Billing/             BillingService / QuotaService
+│   ├── Billing/             BillingService(按价格计费) / QuotaService
 │   ├── Cache/  Crypto/  Logger/  RateLimit/
 │   ├── Sync/  SpeedTest/
+├── User/                    UserController（注册/登录/验证码/密钥自助）
 ├── Support/                 Config / Html / Notifier / HttpException / InternalException
 └── Admin/                   AdminApp(SPA壳) / AdminController / View/views.php
 data/                        SQLite / cache / ratelimit（运行时，已 gitignore）

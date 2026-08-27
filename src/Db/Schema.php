@@ -17,6 +17,7 @@ final class Schema
         $this->db->execute("CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL DEFAULT '',
             status INTEGER NOT NULL DEFAULT 1,
             balance REAL NOT NULL DEFAULT 0,
             quota_daily INTEGER NOT NULL DEFAULT 0,
@@ -64,7 +65,14 @@ final class Schema
             upstream_model TEXT NOT NULL,
             client_format TEXT NOT NULL DEFAULT 'openai',
             enabled INTEGER NOT NULL DEFAULT 1,
+            prompt_price REAL NOT NULL DEFAULT 0,
+            completion_price REAL NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
+        )");
+        // settings（KV 存储：自动检测等）
+        $this->db->execute("CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
         )");
         // upstream_keys
         $this->db->execute("CREATE TABLE IF NOT EXISTS upstream_keys (
@@ -148,6 +156,9 @@ final class Schema
         $this->ensureColumn('providers', 'client_format', "TEXT NOT NULL DEFAULT 'openai'");
         $this->ensureColumn('api_keys', 'quota_daily', 'INTEGER NOT NULL DEFAULT 0');
         $this->ensureColumn('api_keys', 'quota_monthly', 'INTEGER NOT NULL DEFAULT 0');
+        $this->ensureColumn('users', 'password_hash', "TEXT NOT NULL DEFAULT ''");
+        $this->ensureColumn('model_map', 'prompt_price', 'REAL NOT NULL DEFAULT 0');
+        $this->ensureColumn('model_map', 'completion_price', 'REAL NOT NULL DEFAULT 0');
 
         $this->seedAdmin();
     }

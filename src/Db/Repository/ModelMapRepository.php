@@ -14,6 +14,8 @@ final class ModelMapRepository
         'upstream_model',
         'client_format',
         'enabled',
+        'prompt_price',
+        'completion_price',
     ];
 
     public function __construct(private Database $db) {}
@@ -23,16 +25,20 @@ final class ModelMapRepository
         $data += [
             'client_format' => 'openai',
             'enabled' => 1,
+            'prompt_price' => 0,
+            'completion_price' => 0,
         ];
         $this->db->execute(
-            'INSERT INTO model_map (alias, provider, upstream_model, client_format, enabled, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO model_map (alias, provider, upstream_model, client_format, enabled, prompt_price, completion_price, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $data['alias'],
                 $data['provider'],
                 $data['upstream_model'],
                 $data['client_format'],
                 $data['enabled'],
+                $data['prompt_price'],
+                $data['completion_price'],
                 $data['created_at'] ?? time(),
             ]
         );
@@ -81,6 +87,24 @@ final class ModelMapRepository
     public function allEnabled(): array
     {
         return $this->db->fetchAll('SELECT * FROM model_map WHERE enabled = 1 ORDER BY id ASC');
+    }
+
+    /** 指定供应商的启用模型 */
+    public function allEnabledByProvider(string $provider): array
+    {
+        return $this->db->fetchAll(
+            'SELECT * FROM model_map WHERE enabled = 1 AND provider = ? ORDER BY id ASC',
+            [$provider]
+        );
+    }
+
+    /** 按 供应商+上游模型 精确查启用行（provider/model 路由用） */
+    public function findEnabledByProviderAndModel(string $provider, string $upstreamModel): ?array
+    {
+        return $this->db->fetchOne(
+            'SELECT * FROM model_map WHERE provider = ? AND upstream_model = ? AND enabled = 1 LIMIT 1',
+            [$provider, $upstreamModel]
+        );
     }
 
     public function findEnabledByAlias(string $alias): ?array

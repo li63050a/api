@@ -44,11 +44,29 @@ final class SpeedTestRepository
         );
     }
 
+    /** 近期成功测速（provider_id + model + 延迟），供最快路由排序 */
+    public function recentSuccess(int $limit = 500): array
+    {
+        return $this->db->fetchAll(
+            'SELECT provider_id, model, latency_ms FROM speedtest_log WHERE success = 1 ORDER BY id DESC LIMIT ?',
+            [$limit]
+        );
+    }
+
     public function bestForProvider(int $providerId): ?array
     {
         return $this->db->fetchOne(
             'SELECT * FROM speedtest_log WHERE provider_id = ? ORDER BY latency_ms ASC LIMIT 1',
             [$providerId]
+        );
+    }
+
+    /** 某供应商下某模型最近一次测速 */
+    public function latestForModel(int $providerId, string $model): ?array
+    {
+        return $this->db->fetchOne(
+            'SELECT * FROM speedtest_log WHERE provider_id = ? AND model = ? ORDER BY id DESC LIMIT 1',
+            [$providerId, $model]
         );
     }
 }
