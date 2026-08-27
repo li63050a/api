@@ -12,9 +12,10 @@
 
 - **多供应商统一路由**：按请求里的 `model` 别名映射到对应供应商（OpenAI / Anthropic / Gemini，或任意 **OpenAI 兼容三方**如 DeepSeek / GLM / Qwen），上游 Key 支持多 Key 池 + 故障熔断 + 自动重试。
 - **路由模型（仿 new-api）**：支持 `provider/model` 精确路由（无需 model_map 行）、`all` 全部中最快、`{provider}` 或 `{provider}/*` 单供应商最快；最快按近期测速延迟排序。
+- **模型渠道（仿 new-api）**：一个模型可绑定多个供应商渠道，按优先级/权重轮换，失败自动故障转移到下一渠道；渠道接口格式须与模型一致。
 - **单管理员 + 用户注册**：后台单管理员（默认 `admin666`，首登强制改密）；`/user/index.php` 提供用户注册/登录，注册带人机验证（数学验证码），用户可自助生成/管理自己的 API Key。
 - **模型价格与计费**：每个模型可设 输入/输出 单价（$/百万 token），计费 cost = 输入tokens/1e6×输入价 + 输出tokens/1e6×输出价。
-- **自动检测模型可用度**：后台顶栏模型条一键开启，设置间隔分钟；虚拟主机无 cron 时访问后台自动按间隔触发（也提供 `scripts/auto_detect.php` 供 cron 主机使用）；失败可自动禁用。
+- **自动检测模型可用度**：后台顶栏模型条一键开启，设置间隔分钟；开启后**访问后台即按间隔自动触发**（虚拟主机无需任何定时任务）；失败可自动禁用。
 - **多格式对外接口**：调用方可直接以 OpenAI 兼容格式，或 Anthropic / Gemini 客户端格式请求（通过 `X-Client-Format` 头切换）；内部以 OpenAI 为规范格式，供应商差异在适配器内消化。每个模型/供应商可指定自身接口格式。
 - **流式 & 非流式**：聊天补全支持 SSE 流式透传；流式开始后不可重试，避免重复输出。
 - **鉴权 / 限流 / 配额 / 权限（按 Key）**：API Key（sha256 索引 O(1) 定位 + bcrypt 校验）；文件锁 best-effort 限流；**每个 Key 可单独设置日 / 月 token 配额、IP 白名单、可用模型白名单**。
@@ -153,9 +154,9 @@ curl ... -d '{"model":"openai/*","messages":[...]}'
 
 `/user/index.php` 提供用户注册（含数学验证码人机验证）、登录与自助管理 API Key。注册的用户凭自己的 Key 调用 `/index.php/v1/...`，计费按 `user_id` 归集。
 
-### 7. 自动检测模型可用度（虚拟主机无需 cron）
+### 7. 自动检测模型可用度（虚拟主机无需任何定时任务）
 
-后台顶栏模型条：开启「自动检测」并设置间隔分钟即可。开启后**访问后台时按间隔自动触发**全量检测（无需任何定时任务）；失败可自动禁用。支持 cron 的主机可改用 `scripts/auto_detect.php`（`* * * * * php scripts/auto_detect.php`）。
+后台顶栏模型条：开启「自动检测」并设置间隔分钟即可。开启后**访问后台时按间隔自动触发**全量检测（无需 cron/后台进程），失败可自动禁用。
 
 ---
 
@@ -176,7 +177,6 @@ user/index.php               用户中心（注册/登录/人机验证 + 自助�
 config.php                   配置（返回数组）
 deploy/nginx-site.conf       nginx 站点配置示例
 scripts/reset_admin.php      重置默认管理员
-scripts/auto_detect.php      自动检测模型可用度（cron 可选）
 src/
 ├── bootstrap.php            PSR-4 风格 autoloader + Bootstrap 容器/内核装配
 ├── Container.php            极简依赖容器
@@ -186,7 +186,7 @@ src/
 ├── Db/                      Database(PDO) / Schema(建表+种子) / Repository/*
 ├── Domain/
 │   ├── Auth/                ApiKeyAuth(O(1)) / AdminAuth(会话+强制改密) / UserAuth(注册+验证码)
-│   ├── Provider/            Formatter / AbstractProvider / 三家 Provider / KeyPool / Factory
+│   ├── Provider/            Formatter / AbstractProvider(多渠道故障转移) / 三家 Provider / KeyPool / Factory
 │   ├── Billing/             BillingService(按价格计费) / QuotaService
 │   ├── Cache/  Crypto/  Logger/  RateLimit/
 │   ├── Sync/  SpeedTest/

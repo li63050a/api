@@ -34,40 +34,58 @@ abstract class AbstractProvider implements ProviderInterface
         ?callable $onChunk = null,
     ): ?array {
         $endpoint = $this->endpoints()[$endpointType] ?? $this->endpoints()['chat'];
+        // 多渠道（仿 new-api）：无 channels 时退化为单一渠道（model_map.provider）
+        $channels = $model['channels'] ?? null;
+        if (!is_array($channels) || $channels === []) {
+            $channels = [[
+                'provider_id' => (int)($model['provider_id'] ?? 0),
+                'base_url' => (string)($model['base_url'] ?? ''),
+                'timeout' => (int)($model['timeout'] ?? 0),
+            ]];
+        }
         $attempts = max(1, (int)$this->config->get('provider_max_retries', 1) + 1);
         $lastError = '';
+        $noKey = true;
 
-        for ($i = 0; $i < $attempts; $i++) {
-            $upstream = $this->pool->pick((int)$model['provider_id'], (int)($model['preferred_key_id'] ?? 0));
-            if ($upstream === null) {
-                $ctx = 'provider=' . (string)($model['provider'] ?? '')
-                    . ', provider_id=' . (int)($model['provider_id'] ?? 0)
-                    . ', model=' . (string)($model['alias'] ?? '');
-                throw new HttpException(
-                    '暂无可用的上游密钥（' . $ctx . '），请确认该供应商已配置 API Key 且未被熔断',
-                    503,
-                    'no_available_upstream'
-                );
-            }
-            $keyValue = $this->decryptUpstreamKey((string)$upstream['key_value']);
-            // $model 为完整 model_map 行（含 base_url/upstream_model/timeout），必须整体传入 buildUrl
-            $url = $this->buildUrl($model, $endpoint, $payload, $clientFormat);
-            $body = $this->convertRequest($payload, $clientFormat);
+        foreach ($channels as $ch) {
+            $model['provider_id'] = (int)($ch['provider_id'] ?? 0);
+            $model['base_url'] = (string)($ch['base_url'] ?? '');
+            $model['timeout'] = (int)($ch['timeout'] ?? 0);
+            for ($i = 0; $i < $attempts; $i++) {
+                $upstream = $this->pool->pick($model['provider_id'], (int)($model['preferred_key_id'] ?? 0));
+                if ($upstream === null) {
+                    $lastError = 'provider ' . $model['provider_id'] . ' has no available upstream key';
+                    continue 2; // 该渠道无可用密钥 → 下一渠道
+                }
+                $noKey = false;
+                $keyValue = $this->decryptUpstreamKey((string)$upstream['key_value']);
+                $url = $this->buildUrl($model, $endpoint, $payload, $clientFormat);
+                $body = $this->convertRequest($payload, $clientFormat);
 
-            try {
-                $result = $this->curlOnce($url, $keyValue, $body, $onChunk);
-                $this->pool->markSuccess((int)$upstream['id']);
-                return $result; // 成功即返回；流式时 $onChunk 已写，$result 为 usage 数组或 null
-            } catch (\Throwable $e) {
-                $lastError = $e->getMessage();
-                $this->pool->markFailure((int)$upstream['id']);
-                if ($onChunk !== null) {
-                    // 流式已开始则无法安全重试，直接抛给上层
-                    throw new HttpException($this->friendlyError($lastError), 502, 'upstream_error');
+                try {
+                    $result = $this->curlOnce($url, $keyValue, $body, $onChunk);
+                    $this->pool->markSuccess((int)$upstream['id']);
+                    return $result; // 成功即返回；流式时 $onChunk 已写，$result 为 usage 数组或 null
+                } catch (\Throwable $e) {
+                    $lastError = $e->getMessage();
+                    $this->pool->markFailure((int)$upstream['id']);
+                    if ($onChunk !== null) {
+                        // 流式已开始则无法安全重试，直接抛给上层
+                        throw new HttpException($this->friendlyError($lastError), 502, 'upstream_error');
+                    }
                 }
             }
         }
 
+        if ($noKey) {
+            $ctx = 'provider=' . (string)($model['provider'] ?? '')
+                . ', model=' . (string)($model['alias'] ?? '');
+            throw new HttpException(
+                '暂无可用的上游密钥（' . $ctx . '），请确认已配置 API Key 且未被熔断',
+                503,
+                'no_available_upstream'
+            );
+        }
         throw new HttpException($this->friendlyError($lastError), 502, 'upstream_error');
     }
 

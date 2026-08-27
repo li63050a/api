@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Db\Repository\ModelChannelRepository;
 use App\Db\Repository\ModelMapRepository;
 use App\Db\Repository\ProviderRepository;
 use App\Db\Repository\SpeedTestRepository;
@@ -20,6 +21,7 @@ final class ModelAlias implements MiddlewareInterface
         private ProviderRepository $providers,
         private SpeedTestRepository $speedTests,
         private Config $config,
+        private ModelChannelRepository $channels,
     ) {}
 
     public function process(Request $request): void
@@ -176,11 +178,44 @@ final class ModelAlias implements MiddlewareInterface
         if (!in_array($family, self::FAMILIES, true)) {
             $family = 'openai';
         }
-        return array_merge($map, [
+        $result = array_merge($map, [
             'provider' => $family,
             'provider_id' => (int)$provider['id'],
             'base_url' => (string)($provider['base_url'] ?? ''),
             'timeout' => (int)($provider['timeout'] ?? 0),
         ]);
+        // 多供应商渠道（仿 new-api）：按优先级/权重配置，同接口格式的供应商可作故障转移
+        $channels = [];
+        foreach ($this->channels->byModel((int)($map['id'] ?? 0)) as $ch) {
+            if ((int)($ch['status'] ?? 1) !== 1) {
+                continue;
+            }
+            $p = $this->providers->find((int)$ch['provider_id']);
+            if ($p === null || trim((string)($p['base_url'] ?? '')) === '') {
+                continue;
+            }
+            $pFamily = (string)($p['client_format'] ?? 'openai');
+            if (!in_array($pFamily, self::FAMILIES, true)) {
+                $pFamily = 'openai';
+            }
+            if ($pFamily !== $family) {
+                continue; // 渠道接口格式必须与模型一致（模型级转换）
+            }
+            $channels[] = [
+                'provider_id' => (int)$ch['provider_id'],
+                'base_url' => (string)($p['base_url'] ?? ''),
+                'timeout' => (int)($p['timeout'] ?? 0),
+                'priority' => (int)($ch['priority'] ?? 100),
+                'weight' => (int)($ch['weight'] ?? 1),
+            ];
+        }
+        if ($channels !== []) {
+            // 主渠道即列表首位，保证 provider_id/base_url 与转发一致
+            $result['channels'] = $channels;
+            $result['provider_id'] = $channels[0]['provider_id'];
+            $result['base_url'] = $channels[0]['base_url'];
+            $result['timeout'] = $channels[0]['timeout'];
+        }
+        return $result;
     }
 }

@@ -7,6 +7,7 @@ use App\Db\Database;
 use App\Db\Repository\AdminAuditRepository;
 use App\Db\Repository\AdminUserRepository;
 use App\Db\Repository\ApiKeyRepository;
+use App\Db\Repository\ModelChannelRepository;
 use App\Db\Repository\ModelMapRepository;
 use App\Db\Repository\ProviderRepository;
 use App\Db\Repository\RequestLogRepository;
@@ -42,6 +43,7 @@ final class AdminController
     private RequestLogRepository $logs;
     private SpeedTestRepository $speedTests;
     private SettingRepository $settings;
+    private ModelChannelRepository $modelChannels;
 
     public function __construct(
         private AdminAuth $auth,
@@ -54,6 +56,7 @@ final class AdminController
         $this->keys = new ApiKeyRepository($db);
         $this->providers = new ProviderRepository($db);
         $this->modelMap = new ModelMapRepository($db);
+        $this->modelChannels = new ModelChannelRepository($db);
         $this->upstreamKeys = new UpstreamKeyRepository($db);
         $this->logs = new RequestLogRepository($db);
         $this->speedTests = new SpeedTestRepository($db);
@@ -480,6 +483,78 @@ final class AdminController
             : $this->modelSync()->syncAll($autoDisable);
         $this->auditLog($r, 'modelmap.sync', ['provider_id' => $pid, 'auto_disable' => $autoDisable]);
         return ['results' => $results];
+    }
+
+    /* ---------- 模型渠道（仿 new-api：一模型多供应商，优先级+故障转移） ---------- */
+
+    private function actModelChannelsList(Request $r, array $b): array
+    {
+        $modelId = (int)($b['model_id'] ?? 0);
+        $model = $modelId > 0 ? $this->modelMap->find($modelId) : null;
+        if ($model === null) {
+            throw new HttpException('模型不存在', 404, 'not_found');
+        }
+        $family = (string)($model['client_format'] ?? 'openai');
+        $providers = [];
+        foreach ($this->providers->all() as $p) {
+            $pFamily = (string)($p['client_format'] ?? 'openai');
+            if ($pFamily !== $family) {
+                continue; // 渠道接口格式须与模型一致
+            }
+            $providers[] = [
+                'id' => (int)$p['id'],
+                'name' => (string)$p['name'],
+                'base_url' => (string)($p['base_url'] ?? ''),
+                'status' => (int)$p['status'],
+            ];
+        }
+        $channels = [];
+        foreach ($this->modelChannels->byModel($modelId) as $ch) {
+            $p = $this->providers->find((int)$ch['provider_id']);
+            $channels[] = [
+                'id' => (int)$ch['id'],
+                'provider_id' => (int)$ch['provider_id'],
+                'provider_name' => $p === null ? ('#' . $ch['provider_id']) : (string)$p['name'],
+                'priority' => (int)$ch['priority'],
+                'weight' => (int)$ch['weight'],
+                'status' => (int)$ch['status'],
+            ];
+        }
+        return ['model' => ['id' => $modelId, 'alias' => (string)$model['alias']], 'channels' => $channels, 'providers' => $providers];
+    }
+
+    private function actModelChannelsSave(Request $r, array $b): array
+    {
+        $modelId = (int)($b['model_id'] ?? 0);
+        $providerId = (int)($b['provider_id'] ?? 0);
+        $model = $this->modelMap->find($modelId);
+        $provider = $this->providers->find($providerId);
+        if ($model === null || $provider === null) {
+            throw new HttpException('模型或供应商不存在', 404, 'not_found');
+        }
+        if ((string)($provider['client_format'] ?? 'openai') !== (string)($model['client_format'] ?? 'openai')) {
+            throw new HttpException('渠道供应商接口格式必须与模型一致', 422, 'invalid_request');
+        }
+        $id = $this->modelChannels->upsert(
+            $modelId,
+            $providerId,
+            max(0, (int)($b['priority'] ?? 100)),
+            max(1, (int)($b['weight'] ?? 1)),
+            (int)($b['status'] ?? 1),
+        );
+        $this->auditLog($r, 'model.channels.save', ['model_id' => $modelId, 'provider_id' => $providerId, 'id' => $id]);
+        return ['id' => $id];
+    }
+
+    private function actModelChannelsDelete(Request $r, array $b): array
+    {
+        $id = (int)($b['id'] ?? 0);
+        if ($id <= 0) {
+            throw new HttpException('invalid id', 422, 'invalid_request');
+        }
+        $this->modelChannels->delete($id);
+        $this->auditLog($r, 'model.channels.delete', ['id' => $id]);
+        return ['id' => $id];
     }
 
     /* ---------- 日志 / 账单 / 审计 / 指标 ---------- */

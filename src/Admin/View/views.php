@@ -649,7 +649,8 @@ function views_app_js(): string
           h += '<tr><td>' + esc(m.alias) + '</td><td>' + esc(m.upstream_model || '-') + '</td>'
             + '<td>' + esc(m.client_format) + '</td><td>' + pillStatus(m.enabled) + '</td>'
             + '<td><button type="button" class="ghost" data-speedmodel="' + m.id + '">测速</button></td>'
-            + '<td><button type="button" class="ghost" data-editmodel="' + m.id + '">编辑</button> '
+            + '<td><button type="button" class="ghost" data-channels="' + m.id + '" data-alias="' + esc(m.alias) + '">渠道</button> '
+            + '<button type="button" class="ghost" data-editmodel="' + m.id + '">编辑</button> '
             + '<button type="button" class="ghost" data-togglemodel="' + m.id + '">' + (m.enabled == 1 ? '禁用' : '启用') + '</button> '
             + '<button type="button" class="danger" data-delmodel="' + m.id + '">删除</button></td></tr>';
         });
@@ -662,6 +663,61 @@ function views_app_js(): string
     if (!(data.items || []).length) { h += '<p class="muted">尚未配置供应商，点击「新增供应商」。新增时可直接填写上游密钥。</p>'; }
     setTimeout(function () { bindProviderActions(data.items, data.models, data.formats); }, 0);
     return h;
+  }
+
+  /* 渠道管理弹窗：一模型多供应商（优先级/权重/启停，故障转移） */
+  function channelsModal(modelId, alias) {
+    api('model.channels.list', { model_id: modelId }).then(function (j) {
+      if (!j.ok) { toast((j.error && j.error.message) || '加载失败', true); return; }
+      var d = j.data;
+      var chRows = (d.channels || []).map(function (c) {
+        return '<tr><td>' + esc(c.provider_name) + '</td><td>' + c.priority + '</td><td>' + c.weight + '</td>'
+          + '<td>' + pillStatus(c.status) + '</td>'
+          + '<td><button type="button" class="danger" data-delch="' + c.id + '">移除</button></td></tr>';
+      }).join('') || '<tr><td colspan="5" class="muted">暂无渠道，模型将只走默认供应商。</td></tr>';
+      var pOpts = (d.providers || []).map(function (p) {
+        return '<option value="' + p.id + '">' + esc(p.name) + '</option>';
+      }).join('') || '<option value="">（无同格式供应商）</option>';
+      var m = getModal();
+      modalAction = null;
+      boxEl.className = 'modal wide';
+      boxEl.innerHTML = '<button type="button" class="m-close" data-mclose>&times;</button>'
+        + '<h3>渠道 · ' + esc(alias) + '</h3>'
+        + '<p class="hint">渠道按优先级（小者优先）轮换，失败自动故障转移到下一渠道。仅展示同接口格式的供应商。</p>'
+        + '<table><tr><th>供应商</th><th>优先级</th><th>权重</th><th>状态</th><th>操作</th></tr>' + chRows + '</table>'
+        + '<div class="grid" style="margin-top:14px">'
+        + '<div><label>供应商</label><select name="provider_id">' + pOpts + '</select></div>'
+        + '<div><label>优先级（越小越先）</label><input type="number" name="priority" min="0" value="100"></div>'
+        + '<div><label>权重（越大越优先轮换）</label><input type="number" name="weight" min="1" value="1"></div>'
+        + '<div><label>状态</label><select name="status"><option value="1">启用</option><option value="0">停用</option></select></div>'
+        + '<div class="full"><button type="button" class="success" id="chAddBtn">添加渠道</button></div>'
+        + '</div>'
+        + '<div class="m-actions"><button type="button" class="ghost" data-mclose>关闭</button></div>';
+      m.mask.classList.add('show');
+      boxEl.querySelectorAll('[data-mclose]').forEach(function (b) { b.addEventListener('click', closeModal); });
+      boxEl.querySelector('#chAddBtn').addEventListener('click', function () {
+        var pid = boxEl.querySelector('[name=provider_id]').value;
+        if (!pid) { toast('请选择供应商', true); return; }
+        api('model.channels.save', {
+          model_id: modelId,
+          provider_id: pid,
+          priority: boxEl.querySelector('[name=priority]').value,
+          weight: boxEl.querySelector('[name=weight]').value,
+          status: boxEl.querySelector('[name=status]').value
+        }).then(function (j) {
+          if (j.ok) { toast('已保存'); closeModal(); loadView('providers'); }
+          else { toast((j.error && j.error.message) || '保存失败', true); }
+        });
+      });
+      boxEl.querySelectorAll('[data-delch]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          api('model.channels.delete', { id: b.getAttribute('data-delch') }).then(function (j) {
+            if (j.ok) { toast('已移除'); closeModal(); loadView('providers'); }
+            else { toast((j.error && j.error.message) || '移除失败', true); }
+          });
+        });
+      });
+    });
   }
 
   function bindProviderActions(items, models, formats) {
@@ -710,6 +766,11 @@ function views_app_js(): string
     content.querySelectorAll('[data-editmodel]').forEach(function (b) {
       var mm = findModel(models, b.getAttribute('data-editmodel'));
       b.addEventListener('click', function () { editModelModal(mm, items); });
+    });
+    content.querySelectorAll('[data-channels]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        channelsModal(b.getAttribute('data-channels'), b.getAttribute('data-alias'));
+      });
     });
     content.querySelectorAll('[data-togglemodel]').forEach(function (b) {
       var mm = findModel(models, b.getAttribute('data-togglemodel'));

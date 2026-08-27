@@ -8,6 +8,7 @@ use App\Db\Repository\AdminAuditRepository;
 use App\Db\Repository\AdminUserRepository;
 use App\Db\Repository\ApiKeyRepository;
 use App\Db\Repository\BillingRepository;
+use App\Db\Repository\ModelChannelRepository;
 use App\Db\Repository\ModelMapRepository;
 use App\Db\Repository\ProviderRepository;
 use App\Db\Repository\RequestLogRepository;
@@ -77,6 +78,7 @@ final class Bootstrap
         $container->set(ApiKeyRepository::class, new ApiKeyRepository($db));
         $container->set(ProviderRepository::class, new ProviderRepository($db));
         $container->set(ModelMapRepository::class, new ModelMapRepository($db));
+        $container->set(ModelChannelRepository::class, new ModelChannelRepository($db));
         $container->set(UpstreamKeyRepository::class, new UpstreamKeyRepository($db));
         $container->set(BillingRepository::class, new BillingRepository($db));
         $container->set(RequestLogRepository::class, new RequestLogRepository($db));
@@ -150,6 +152,7 @@ final class Bootstrap
             $c->get(ProviderRepository::class),
             $c->get(SpeedTestRepository::class),
             $c->get(Config::class),
+            $c->get(ModelChannelRepository::class),
         ));
 
         // Handler（均可直接 __invoke）

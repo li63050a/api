@@ -30,9 +30,8 @@ $controller = new \App\Admin\AdminController(
     $c->get(\App\Support\Config::class)
 );
 
-// 自动检测模型可用度（虚拟主机无 cron 的替代方案）：
+// 自动检测模型可用度（虚拟主机无 cron / 无后台进程）：
 // 开启后，每次访问后台（页面或 AJAX）时若已到间隔则执行一次全量检测。
-// 有 cron 的主机可改用 scripts/auto_detect.php，更稳定。
 $settingsRepo = $c->get(\App\Db\Repository\SettingRepository::class);
 if ((int)$settingsRepo->get('auto_detect_enabled', 0) === 1) {
     $interval = max(1, (int)$settingsRepo->get('auto_detect_interval', 30));

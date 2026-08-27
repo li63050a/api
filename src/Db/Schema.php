@@ -74,6 +74,18 @@ final class Schema
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL DEFAULT ''
         )");
+        // model_channels：模型 → 多供应商渠道（优先级/权重/启停，仿 new-api 渠道）
+        $this->db->execute("CREATE TABLE IF NOT EXISTS model_channels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_id INTEGER NOT NULL,
+            provider_id INTEGER NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 100,
+            weight INTEGER NOT NULL DEFAULT 1,
+            status INTEGER NOT NULL DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            UNIQUE(model_id, provider_id)
+        )");
+        $this->db->execute('CREATE INDEX IF NOT EXISTS idx_model_channels_model ON model_channels(model_id)');
         // upstream_keys
         $this->db->execute("CREATE TABLE IF NOT EXISTS upstream_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
